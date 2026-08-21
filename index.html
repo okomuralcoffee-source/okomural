@@ -4230,7 +4230,6 @@ const ATT_DATA={1:'hadir',2:'hadir',3:'libur',4:'hadir',5:'hadir',6:'hadir',7:'h
    SESSION STORE — transaksi & data aktif sesi ini
 ══════════════════════════════════════════════════ */
 let _lastPrintedTx = null; // tracks last receipt for thermal print
-let SESSION = {
 // ── STRUK_CONFIG & LOYALTY_CONFIG (fallback defaults) ──────────────────────
 let STRUK_CONFIG = {
   storeName: 'OKOMURAL Coffee', address: 'Jl. Kemang Raya No.1', phone: '021-xxxxxxx',
@@ -4238,6 +4237,8 @@ let STRUK_CONFIG = {
   taxPct: 0, serviceChargePct: 0
 };
 let LOYALTY_CONFIG = { pointsPerIdr: 1000, pointsToRupiah: 100, minRedeem: 100 };
+
+let SESSION = {
   transactions: [],   // semua transaksi POS sesi ini
   opnameLogs: [],     // log opname inventory
 };
