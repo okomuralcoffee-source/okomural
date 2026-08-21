@@ -237,7 +237,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .tile-icon.pos{background:var(--green-dim);color:var(--green)}
 .tile-icon.biz{background:rgba(255,255,255,.06);color:#aaa}
 .tile-icon.crm{background:var(--amber-dim);color:var(--amber)}
-.tile-icon.barista{background:rgba(59,130,246,.1);color:var(--blue)}
 .tile-icon svg{width:16px;height:16px}
 .tile-name{font-size:13px;font-weight:600}
 .tile-desc{font-size:11px;color:var(--text3);line-height:1.5;margin-top:-4px}
@@ -296,7 +295,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .att-log-time{font-size:10px;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0}
 
 /* ── POS ── */
-#screen-barista{background:var(--bg);flex-direction:column}
 #screen-pos{flex-direction:column}
 .pos-topbar{height:48px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 14px;flex-shrink:0}
 .pos-topbar-brand{display:flex;align-items:center;gap:10px}
@@ -1453,7 +1451,8 @@ tr:hover td{background:var(--bg2)}
 .pos-member-badge{background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:6px 10px;font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 
 /* ── SHIFT OVERLAY ── */
-.shift-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.88);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.shift-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.88);z-index:9000;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.shift-overlay.open{display:flex}
 .shift-modal{background:var(--bg1);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:380px;padding:28px 24px;display:flex;flex-direction:column;gap:0;animation:fadeUp .2s ease}
 .shift-modal-icon{width:56px;height:56px;border-radius:14px;background:var(--green-dim);border:1px solid rgba(34,197,94,.2);display:flex;align-items:center;justify-content:center;color:var(--green);margin:0 auto 16px}
 .shift-modal-title{font-size:20px;font-weight:700;text-align:center;margin-bottom:4px;letter-spacing:-.3px}
@@ -1490,28 +1489,6 @@ tr:hover td{background:var(--bg2)}
 .stock-alert-bell{position:relative;width:32px;height:32px;background:var(--red-dim);border:1px solid rgba(239,68,68,.25);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--red);animation:bellShake 3s ease infinite}
 @keyframes bellShake{0%,90%,100%{transform:rotate(0)}92%{transform:rotate(-8deg)}94%{transform:rotate(8deg)}96%{transform:rotate(-6deg)}98%{transform:rotate(6deg)}}
 .stock-alert-count{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:9px;font-weight:700;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
-
-/* ── BARISTA SCREEN ── */
-.barista-filter-btn{padding:4px 10px;border-radius:3px;font-size:11px;cursor:pointer;border:1px solid var(--border);color:var(--text3);transition:all .13s;background:none;font-family:inherit}
-.barista-filter-btn.active{background:var(--bg3);border-color:var(--border-hi);color:var(--text)}
-.order-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;transition:border-color .15s}
-.order-card.pending{border-left:3px solid var(--amber)}
-.order-card.proses{border-left:3px solid var(--blue)}
-.order-card.selesai{border-left:3px solid var(--green);opacity:.6}
-.order-card-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.order-no{font-size:11px;font-family:monospace;color:var(--text3)}
-.order-timer{font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px}
-.order-timer.ok{background:var(--green-dim);color:var(--green)}
-.order-timer.warn{background:var(--amber-dim);color:var(--amber)}
-.order-timer.late{background:var(--red-dim);color:var(--red)}
-.order-items{font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.7}
-.order-items strong{color:var(--text)}
-.order-actions{display:flex;gap:6px}
-.order-btn{flex:1;padding:7px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .13s}
-.order-btn:hover{opacity:.85}
-.order-btn.proses-btn{background:var(--blue);color:#fff}
-.order-btn.selesai-btn{background:var(--green);color:#000}
-.order-btn.recall-btn{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
 
 /* ── VOID BADGE ── */
 .badge-void{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2)}
@@ -1623,22 +1600,45 @@ const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
 // Dijalankan setelah DOM siap (dipanggil di DOMContentLoaded bawah)
 async function initSupabaseAuth() {
   // Cek session yang sudah ada (page refresh / tab reopen)
-  const { data: { session } } = await supa.auth.getSession();
-  if (session) {
-    const ok = await hydrateUserFromSession(session);
-    if (ok) {
-      goToLauncher();
-      return;
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    if (session) {
+      const ok = await hydrateUserFromSession(session);
+      if (ok) {
+        goToLauncher();
+        return;
+      }
     }
+  } catch(e) {
+    console.warn('Supabase getSession error:', e);
   }
+
+  // Fallback: restore dari localStorage (untuk login lokal / offline)
+  try {
+    const savedUser = localStorage.getItem('okomural_current_user');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      // Validasi minimal field yang dibutuhkan
+      if (parsed && parsed.name && parsed.role) {
+        currentUser = parsed;
+        goToLauncher();
+        return;
+      }
+    }
+  } catch(e) {
+    console.warn('localStorage user restore error:', e);
+  }
+
+  // Tidak ada session → ke login
+  showScreen('login');
 
   // Listen untuk perubahan auth state (login/logout/token refresh)
   supa.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_OUT' || !session) {
       currentUser = null;
+      localStorage.removeItem('okomural_current_user');
       showScreen('login');
     }
-    // SIGNED_IN & TOKEN_REFRESHED: sudah ditangani di doLogin()
   });
 }
 
@@ -1663,6 +1663,7 @@ async function hydrateUserFromSession(session) {
       access:    'launcher',
       auth_id:   session.user.id
     };
+    try { localStorage.setItem('okomural_current_user', JSON.stringify(currentUser)); } catch(e) {}
     return true;
   } catch(e) {
     console.warn('hydrateUserFromSession error:', e);
@@ -1741,13 +1742,6 @@ async function hydrateUserFromSession(session) {
           <div><div class="tile-name">Bisnis</div><div class="tile-desc">Laporan &amp; keuangan</div></div>
           <svg class="tile-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           <svg id="tile-bisnis-lock" style="display:none;position:absolute;top:10px;right:10px;opacity:.35" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        </div>
-        <div class="module-tile" style="border-color:rgba(59,130,246,.3)" onclick="goToBarista()">
-          <div class="tile-icon" style="background:rgba(59,130,246,.1);color:var(--blue)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2M7 2v20M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
-          </div>
-          <div><div class="tile-name">Barista</div><div class="tile-desc">Antrian order</div></div>
-          <svg class="tile-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </div>
         <div class="module-tile crm" onclick="goToCRM()">
           <div class="tile-icon crm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M19 8l2 2 4-4"/></svg></div>
@@ -2561,7 +2555,7 @@ async function hydrateUserFromSession(session) {
         <div class="sidebar-avatar" id="app-avatar">BS</div>
         <div><div class="sidebar-user-name" id="app-uname">Budi Santoso</div><div class="sidebar-user-role" id="app-urole">Owner</div></div>
       </div>
-      <div class="sidebar-logout" onclick="doLogout()">
+      <div class="sidebar-logout" onclick="goToLauncher();closeSidebar()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>← Launcher
       </div>
     </div>
@@ -3875,7 +3869,7 @@ async function hydrateUserFromSession(session) {
 </div>
 
 <!-- SHIFT OVERLAY — Open Shift -->
-<div class="shift-overlay" id="shift-overlay" style="display:none" onclick="if(event.target===this){this.style.display='none';if(shiftClockInterval){clearInterval(shiftClockInterval);shiftClockInterval=null;}}">
+<div class="shift-overlay" id="shift-overlay" onclick="if(event.target===this){this.classList.remove('open');if(shiftClockInterval){clearInterval(shiftClockInterval);shiftClockInterval=null;}}">
   <div class="shift-modal" id="shift-modal-open">
     <div class="shift-modal-icon">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -3916,7 +3910,7 @@ async function hydrateUserFromSession(session) {
 </div>
 
 <!-- SHIFT OVERLAY — Close Shift -->
-<div class="shift-overlay" id="shift-close-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+<div class="shift-overlay" id="shift-close-overlay" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="shift-modal">
     <div class="shift-modal-icon" style="background:var(--red-dim);border-color:rgba(239,68,68,.2);color:var(--red)">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -3944,7 +3938,7 @@ async function hydrateUserFromSession(session) {
 
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="shift-confirm-btn" style="background:var(--red);flex:1" onclick="confirmCloseShift()">Tutup Shift</button>
-      <button onclick="document.getElementById('shift-close-overlay').style.display='none'" style="flex:0 0 auto;padding:12px 16px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;font-family:inherit;font-size:13px">Batal</button>
+      <button onclick="document.getElementById('shift-close-overlay').classList.remove('open')" style="flex:0 0 auto;padding:12px 16px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;font-family:inherit;font-size:13px">Batal</button>
     </div>
   </div>
 </div>
@@ -3969,43 +3963,18 @@ async function hydrateUserFromSession(session) {
 </div>
 
 <!-- STOCK ALERT MODAL -->
-<div class="shift-overlay" id="stock-alert-overlay" style="display:none">
+<div class="shift-overlay" id="stock-alert-overlay">
   <div class="shift-modal" style="max-width:400px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div style="font-size:14px;font-weight:700">⚠ Stok Kritis</div>
-      <button onclick="document.getElementById('stock-alert-overlay').style.display='none'" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px">×</button>
+      <button onclick="document.getElementById('stock-alert-overlay').classList.remove('open')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px">×</button>
     </div>
     <div id="stock-alert-list"></div>
-    <button class="shift-confirm-btn" style="margin-top:12px" onclick="document.getElementById('stock-alert-overlay').style.display='none';showModule('inventory')">Lihat Inventory →</button>
+    <button class="shift-confirm-btn" style="margin-top:12px" onclick="document.getElementById('stock-alert-overlay').classList.remove('open');showModule('inventory')">Lihat Inventory →</button>
   </div>
 </div>
 
 <!-- BARISTA SCREEN -->
-<div id="screen-barista" class="screen" style="flex-direction:column;background:var(--bg)">
-  <div style="height:48px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0">
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:22px;height:22px;background:var(--blue);border-radius:3px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2M7 2v20"/></svg></div>
-      <span style="font-size:13px;font-weight:700">BARISTA STATION</span>
-      <span style="font-size:11px;color:var(--text3)">HQ Kemang</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div id="barista-queue-count" style="background:var(--blue-dim);border:1px solid rgba(59,130,246,.3);border-radius:10px;padding:2px 10px;font-size:11px;color:var(--blue);font-weight:600">0 antrian</div>
-      <button onclick="goToLauncher()" style="background:none;border:1px solid var(--border2);border-radius:2px;padding:4px 10px;font-size:11px;color:var(--text3);cursor:pointer;font-family:inherit">← Kembali</button>
-    </div>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-size:13px;font-weight:600">Antrian Order</div>
-      <div style="display:flex;gap:6px">
-        <div class="barista-filter-btn active" onclick="filterBarista(this,'semua')">Semua</div>
-        <div class="barista-filter-btn" onclick="filterBarista(this,'pending')">Pending</div>
-        <div class="barista-filter-btn" onclick="filterBarista(this,'proses')">Diproses</div>
-        <div class="barista-filter-btn" onclick="filterBarista(this,'selesai')">Selesai</div>
-      </div>
-    </div>
-    <div id="barista-queue-list"></div>
-  </div>
-</div>
 
 <!-- CHECKOUT MODAL -->
 
@@ -4297,13 +4266,37 @@ function isMobile(){return window.innerWidth<=640}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
-  // Close all shift overlays when switching screens
-  const so = document.getElementById('shift-overlay');
-  const sc = document.getElementById('shift-close-overlay');
-  if(so) so.style.display = 'none';
-  if(sc) sc.style.display = 'none';
-  if(typeof shiftClockInterval !== 'undefined' && shiftClockInterval) {
-    clearInterval(shiftClockInterval); shiftClockInterval = null;
+
+  // ── Tutup SEMUA overlay & modal saat pindah screen ──────────────────────
+  // Shift overlays (pakai .open class)
+  ['shift-overlay','shift-close-overlay'].forEach(oid=>{
+    const el=document.getElementById(oid);
+    if(el) el.classList.remove('open');
+  });
+  // Overlays pakai .open class
+  ['checkout-modal','qris-overlay','shift-summary-overlay','confirm-overlay',
+   'modifier-overlay','bulk-modal-overlay','belanja-overlay','wizard-overlay',
+   'split-overlay','tx-history-overlay','ob-panel-overlay','ob-modal-overlay',
+   'receipt-modal-overlay','gmodal-bom','gmodal-new-product','stock-alert-overlay'
+  ].forEach(oid=>{
+    const el=document.getElementById(oid);
+    if(el) el.classList.remove('open');
+  });
+  // Overlays pakai style.display
+  ['crm-detail-overlay'].forEach(oid=>{
+    const el=document.getElementById(oid);
+    if(el) el.style.display='none';
+  });
+  // Cart drawer
+  const cd=document.getElementById('cart-drawer');
+  const cb=document.getElementById('cart-backdrop');
+  if(cd) cd.classList.remove('open');
+  if(cb) cb.style.display='none';
+  // Sidebar
+  if(typeof closeSidebar==='function') closeSidebar();
+  // Stop shift clock
+  if(typeof shiftClockInterval!=='undefined' && shiftClockInterval){
+    clearInterval(shiftClockInterval); shiftClockInterval=null;
   }
 }
 async function doLogin(){
@@ -4563,12 +4556,15 @@ async function renderInventory(){
 }
 function goToLogin(){showScreen('login')}
 function goToLauncher(){
+  // Simpan currentUser ke localStorage agar survive refresh
+  try {
+    if(currentUser) localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
+  } catch(e) {}
   showScreen('launcher');
   updateLauncherUser();
   startClock();
   applyLauncherPermissions();
   document.getElementById('lnc-code-input').focus();
-  if(baristaRefreshInterval){ clearInterval(baristaRefreshInterval); baristaRefreshInterval=null; }
   // Hydrate semua data dari Supabase di background (non-blocking)
   if(typeof initAllSupabaseData === 'function') initAllSupabaseData();
 }
@@ -4584,6 +4580,7 @@ async function doLogout(){
   cart = [];
   cartTotal = 0;
   SESSION.transactions = [];
+  try { localStorage.removeItem('okomural_current_user'); } catch(e) {}
   showScreen('login');
   showToast('info','Keluar','Sesi berakhir. Sampai jumpa!');
 }
@@ -4744,7 +4741,7 @@ function goToPOS(){
 
 function openOpenShiftModal(){
   // Show overlay FIRST
-  document.getElementById('shift-overlay').style.display = 'flex';
+  document.getElementById('shift-overlay').classList.add('open');
   try {
     const cashEl = document.getElementById('shift-opening-cash');
     const dispEl = document.getElementById('shift-opening-cash-display');
@@ -4821,7 +4818,7 @@ async function confirmOpenShift(){
     totalCard:    0,
   };
 
-  document.getElementById('shift-overlay').style.display = 'none';
+  document.getElementById('shift-overlay').classList.remove('open');
   saveShiftToStorage(activeShift);
   updateShiftBadge();
   updateCheckoutBtn();
@@ -4834,7 +4831,9 @@ function updateShiftBadge(){
   if (!activeShift) return;
   if(!(activeShift.openedAt instanceof Date)) activeShift.openedAt = new Date(activeShift.openedAt);
   syncMobileShiftBadge();
-  setTimeout(updateShiftBadge, 60000);
+  // Update elapsed time setiap menit
+  clearTimeout(window._shiftBadgeTimer);
+  window._shiftBadgeTimer = setTimeout(updateShiftBadge, 60000);
 }
 
 function getElapsedTime(from){
@@ -4861,7 +4860,7 @@ function openCloseShiftModal(){
   if (!activeShift) { openOpenShiftModal(); return; }
 
   // Show overlay FIRST — sebelum apapun bisa crash
-  document.getElementById('shift-close-overlay').style.display = 'flex';
+  document.getElementById('shift-close-overlay').classList.add('open');
 
   try {
     // Guard openedAt
@@ -4956,7 +4955,7 @@ async function confirmCloseShift(){
 
   activeShift = null;
   saveShiftToStorage(null);
-  document.getElementById('shift-close-overlay').style.display = 'none';
+  document.getElementById('shift-close-overlay').classList.remove('open');
   updateCheckoutBtn();
   const diffMsg = diff===0?'Kas sesuai':diff>0?`Lebih Rp ${Math.abs(diff).toLocaleString('id')}`:`Kurang Rp ${Math.abs(diff).toLocaleString('id')}`;
   showToast('success','Shift ditutup', diffMsg);
@@ -5355,7 +5354,7 @@ function showStockAlerts(){
     ...critical.map(i=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;font-weight:500">${i.name}</span><span class="badge badge-red">HABIS</span></div>`),
     ...warning.map(i=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px">${i.name}</span><span class="badge badge-amber">Sisa ${i.qty} ${i.unit}</span></div>`),
   ].join('')||'<div style="font-size:12px;color:var(--text3);text-align:center;padding:16px">Semua stok aman ✓</div>';
-  document.getElementById('stock-alert-overlay').style.display='flex';
+  document.getElementById('stock-alert-overlay').classList.add('open');
 }
 
 /* ══════════════════════════════════════════════════
@@ -5441,186 +5440,6 @@ function switchBranch(branch){
 /* ══════════════════════════════════════════════════
    5. BARISTA SCREEN & ORDER QUEUE
 ══════════════════════════════════════════════════ */
-let ORDER_QUEUE=[
-  {
-    id:'ORD-SEED-001', txId:'TX-SEED-001',
-    table:'Meja 3', isDineIn:true,
-    items:[
-      {name:'Es Kopi Susu', qty:2, cat:'coffee', note:'less sugar'},
-      {name:'Cappuccino', qty:1, cat:'coffee', note:''},
-    ],
-    status:'pending',
-    createdAt: new Date(Date.now()-4*60000).toISOString(),
-    note:''
-  },
-  {
-    id:'ORD-SEED-002', txId:'TX-SEED-002',
-    table:'Takeaway', isDineIn:false,
-    items:[
-      {name:'Matcha Latte', qty:1, cat:'noncoffee', note:'extra matcha'},
-      {name:'Croissant', qty:2, cat:'food', note:''},
-    ],
-    status:'proses',
-    createdAt: new Date(Date.now()-8*60000).toISOString(),
-    note:''
-  },
-  {
-    id:'ORD-SEED-003', txId:'TX-SEED-003',
-    table:'Meja 1', isDineIn:true,
-    items:[
-      {name:'Americano', qty:1, cat:'coffee', note:''},
-    ],
-    status:'selesai',
-    createdAt: new Date(Date.now()-12*60000).toISOString(),
-    note:''
-  },
-];
-let baristaFilter='semua';
-let baristaTimers={};
-let baristaRefreshInterval=null;
-
-function goToBarista(){
-  showScreen('barista');
-  syncOrderQueue();
-  renderBaristaQueue();
-  // Auto-refresh every 30s to update timers
-  if(baristaRefreshInterval) clearInterval(baristaRefreshInterval);
-  baristaRefreshInterval = setInterval(()=>{
-    if(document.getElementById('screen-barista').classList.contains('active')){
-      renderBaristaQueue();
-    } else {
-      clearInterval(baristaRefreshInterval);
-    }
-  }, 30000);
-}
-
-function syncOrderQueue(){
-  // Ambil transaksi paid yang belum ada di queue
-  SESSION.transactions.filter(t=>t.status==='paid').forEach(tx=>{
-    if(!ORDER_QUEUE.find(o=>o.txId===tx.id)){
-      ORDER_QUEUE.push({
-        id:'ORD-'+Date.now()+'-'+Math.random().toString(36).slice(2,5),
-        txId:tx.id,
-        table: tx.table || tx.splitLabel || 'Takeaway',
-        isDineIn: !!tx.table,
-        items:tx.items.filter(i=>i.cat==='coffee'||i.cat==='noncoffee'||!i.cat),
-        status:'pending',
-        createdAt:tx.createdAt,
-        note:''
-      });
-    }
-  });
-  renderBaristaQueue();
-}
-
-function filterBarista(el,filter){
-  document.querySelectorAll('.barista-filter-btn').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  baristaFilter=filter;
-  renderBaristaQueue();
-}
-
-function renderBaristaQueue(){
-  const list=document.getElementById('barista-queue-list');
-  if(!list)return;
-
-  const filtered=ORDER_QUEUE.filter(o=>{
-    if(baristaFilter==='semua')return true;
-    return o.status===baristaFilter;
-  });
-
-  const pending=ORDER_QUEUE.filter(o=>o.status==='pending').length;
-  const qc=document.getElementById('barista-queue-count');
-  if(qc)qc.textContent=pending+' antrian';
-
-  if(!filtered.length){
-    list.innerHTML=`<div style="text-align:center;padding:40px;color:var(--text3)">
-      <div style="font-size:32px;margin-bottom:10px">${baristaFilter==='selesai'?'✅':'☕'}</div>
-      <div style="font-size:13px">${baristaFilter==='selesai'?'Belum ada order selesai':'Tidak ada antrian ${baristaFilter}'}</div>
-    </div>`;
-    return;
-  }
-
-  const now=new Date();
-  list.innerHTML=filtered.map(order=>{
-    const age=Math.floor((now-new Date(order.createdAt))/60000);
-    const timerClass=age<3?'ok':age<7?'warn':'late';
-    const timerLabel=order.status==='selesai'?'Selesai':age+'m';
-
-    const itemsHTML=order.items.length
-      ? order.items.map(i=>`<div style="margin-bottom:3px">
-          <strong>${i.name}</strong>${i.qty>1?' <span style="color:var(--text3)">×'+i.qty+'</span>':''}
-          ${i.note?`<div style="font-size:10px;color:var(--amber);margin-top:1px;padding-left:8px">↳ ${i.note}</div>`:''}
-        </div>`).join('')
-      : '<div style="color:var(--text3)">Tidak ada item minuman</div>';
-
-    let actionsHTML='';
-    if(order.status==='pending'){
-      actionsHTML=`<button class="order-btn proses-btn" onclick="setOrderStatus('${order.id}','proses')">▶ Mulai Buat</button>`;
-    } else if(order.status==='proses'){
-      actionsHTML=`
-        <button class="order-btn selesai-btn" onclick="setOrderStatus('${order.id}','selesai')">✓ Selesai</button>
-        <button class="order-btn recall-btn" onclick="setOrderStatus('${order.id}','pending')" style="flex:0.4">←</button>`;
-    } else {
-      actionsHTML=`<div style="font-size:11px;color:var(--green);font-weight:600;padding:4px 0">✓ Order selesai disiapkan</div>`;
-    }
-
-    const tableLabel = order.table && order.table !== 'Takeaway'
-      ? `<span style="font-size:10px;background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,.3);border-radius:3px;padding:1px 7px;font-weight:600;margin-left:6px">🪑 ${order.table}</span>`
-      : `<span style="font-size:10px;color:var(--text3);margin-left:6px">Takeaway</span>`;
-    return `<div class="order-card ${order.status}" id="order-card-${order.id}">
-      <div class="order-card-hd">
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
-          <div style="font-size:12px;font-weight:600">Order #${order.id.slice(-6).toUpperCase()}</div>
-          ${tableLabel}
-        </div>
-        <span class="order-timer ${timerClass}">${timerLabel}</span>
-      </div>
-      <div class="order-items">${itemsHTML}</div>
-      <div class="order-actions">${actionsHTML}</div>
-    </div>`;
-  }).join('');
-}
-
-function setOrderStatus(orderId,status){
-  const order=ORDER_QUEUE.find(o=>o.id===orderId);
-  if(!order)return;
-  order.status=status;
-  if(status==='selesai'){
-    showToast('success','Order selesai','#'+orderId.slice(-6).toUpperCase()+' siap disajikan');
-    // Auto move to done list after 10s
-    setTimeout(()=>renderBaristaQueue(),10000);
-  }
-  renderBaristaQueue();
-}
-
-/* Hook: setelah checkout, kirim ke barista queue */
-function addToOrderQueue(tx){
-  const beverageItems=tx.items.filter(i=>{
-    const menu=MENU.find(m=>m.id===i.id);
-    // custom items juga masuk queue kalau bukan food
-    return (menu&&(menu.cat==='coffee'||menu.cat==='noncoffee')) || (i.custom && !i.food);
-  });
-  if(!beverageItems.length)return;
-  const orderLabel = tx.table
-    ? tx.table
-    : tx.splitLabel
-    ? tx.splitLabel
-    : 'Takeaway';
-  ORDER_QUEUE.push({
-    id:'ORD-'+Date.now(),
-    txId:tx.id,
-    table: orderLabel,
-    isDineIn: !!tx.table,
-    items: beverageItems.map(i=>({...i})), // include notes
-    status:'pending',
-    createdAt:tx.createdAt,
-    note:''
-  });
-  const pending=ORDER_QUEUE.filter(o=>o.status==='pending').length;
-  if(pending>0)showToast('info',pending+' order menunggu barista','Notifikasi dikirim ke barista station');
-}
-
 /* ══════════════════════════════════════════════════
    WIRE ALL NEW FEATURES INTO EXISTING FUNCTIONS
 ══════════════════════════════════════════════════ */
@@ -6958,7 +6777,7 @@ function executeSplitCheckout(person){
   showToast('success', 'Split Bill Orang ' + person + ' selesai', 'Rp ' + total.toLocaleString('id'));
   setTimeout(() => showReceipt(tx), 200);
 
-  if(cart.length === 0){ closeSplitBill(); addToOrderQueue(tx); checkStockAlerts(); }
+  if(cart.length === 0){ closeSplitBill(); checkStockAlerts(); }
   else { renderSplitItems(); }
 }
 
@@ -7692,7 +7511,6 @@ async function confirmCheckout(){
   showToast('success','Transaksi berhasil!' + supaLabel, 'Rp ' + finalTotal.toLocaleString('id') + ' · ' + (activePayBtn ? activePayBtn.textContent : 'Cash') + pointMsg);
 
   setTimeout(() => showReceiptWithKupon(tx), 300);
-  addToOrderQueue(tx);
   checkStockAlerts();
 
   if(activeBillId){
@@ -9346,9 +9164,6 @@ renderMenuMgmt = function(){
   }).join('');
 };
 
-/* ── Barista queue: include modifier in order items ── */
-// addToOrderQueue already passes items with full data including modifiers
-// renderBaristaQueue already shows item.note — modifier labels added to note display
 
 /* ══════════════════════════════════════════════════
    DARK / LIGHT MODE TOGGLE
@@ -11760,6 +11575,130 @@ async function uploadAvatarPhoto(file, employeeName){
 /* ══════════════════════════════════════════════════════════════════════════════
    MASTER INIT — dipanggil setelah login berhasil (hydrate semua data)
 ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE 7 FINANCE — Load revenue summary & top products dari Supabase
+══════════════════════════════════════════════════════════════════════════════ */
+
+async function loadRevenueSummaryFromSupabase(dateFrom, dateTo){
+  if(!currentUser?.branch_id) return null;
+  try {
+    const { data, error } = await supa.rpc('get_revenue_summary', {
+      p_branch_id: currentUser.branch_id,
+      p_date_from: dateFrom,
+      p_date_to:   dateTo
+    });
+    if(error){ console.warn('loadRevenueSummary error:', error.message); return null; }
+    return data?.[0] || null;
+  } catch(e){ console.warn('loadRevenueSummaryFromSupabase error:', e); return null; }
+}
+
+async function loadTopProductsFromSupabase(dateFrom, dateTo, limit=5){
+  if(!currentUser?.branch_id) return null;
+  try {
+    const { data, error } = await supa.rpc('get_top_products', {
+      p_branch_id: currentUser.branch_id,
+      p_date_from: dateFrom,
+      p_date_to:   dateTo,
+      p_limit:     limit
+    });
+    if(error){ console.warn('loadTopProducts error:', error.message); return null; }
+    return data || [];
+  } catch(e){ console.warn('loadTopProductsFromSupabase error:', e); return null; }
+}
+
+async function loadDailyTrendFromSupabase(dateFrom, dateTo){
+  if(!currentUser?.branch_id) return null;
+  try {
+    const { data, error } = await supa.rpc('get_daily_revenue_trend', {
+      p_branch_id: currentUser.branch_id,
+      p_date_from: dateFrom,
+      p_date_to:   dateTo
+    });
+    if(error){ console.warn('loadDailyTrend error:', error.message); return null; }
+    return data || [];
+  } catch(e){ console.warn('loadDailyTrendFromSupabase error:', e); return null; }
+}
+
+async function loadPLStatementFromSupabase(year, month){
+  if(!currentUser?.branch_id) return null;
+  try {
+    const { data, error } = await supa.rpc('get_pl_statement', {
+      p_branch_id: currentUser.branch_id,
+      p_year:      year,
+      p_month:     month
+    });
+    if(error){ console.warn('loadPLStatement error:', error.message); return null; }
+    return data || [];
+  } catch(e){ console.warn('loadPLStatementFromSupabase error:', e); return null; }
+}
+
+async function loadOwnerDashboardFromSupabase(dateFrom, dateTo){
+  if(currentUser?.role !== 'Owner') return null;
+  try {
+    const { data, error } = await supa.rpc('get_owner_dashboard', {
+      p_date_from: dateFrom,
+      p_date_to:   dateTo
+    });
+    if(error){ console.warn('loadOwnerDashboard error:', error.message); return null; }
+    return data || [];
+  } catch(e){ console.warn('loadOwnerDashboardFromSupabase error:', e); return null; }
+}
+
+/* Phase 6 CRM — register member & redeem points via Supabase */
+async function registerMemberSupabase(name, phone, email=''){
+  try {
+    const { data, error } = await supa.rpc('register_member', {
+      p_name: name, p_phone: phone, p_email: email || null
+    });
+    if(error){ console.warn('registerMember error:', error.message); return null; }
+    return data;
+  } catch(e){ console.warn('registerMemberSupabase error:', e); return null; }
+}
+
+async function lookupMemberSupabase(query){
+  try {
+    const { data, error } = await supa.rpc('lookup_member', { p_query: query });
+    if(error){ console.warn('lookupMember error:', error.message); return null; }
+    return data || [];
+  } catch(e){ console.warn('lookupMemberSupabase error:', e); return null; }
+}
+
+/* Phase 4 Menu — save product changes ke Supabase */
+async function saveProductToSupabase(product){
+  try {
+    if(product.supaId){
+      const { error } = await supa.from('products').update({
+        name: product.name, price: product.price,
+        is_available: product.isAvailable, emoji: product.emoji
+      }).eq('id', product.supaId);
+      if(error) console.warn('updateProduct error:', error.message);
+    }
+  } catch(e){ console.warn('saveProductToSupabase error:', e); }
+}
+
+async function toggleProductSupabase(productId, available){
+  try {
+    const { error } = await supa.rpc('toggle_product_availability', {
+      p_product_id: productId, p_available: available
+    });
+    if(error) console.warn('toggleProduct error:', error.message);
+  } catch(e){ console.warn('toggleProductSupabase error:', e); }
+}
+
+/* Phase 5 HR — record attendance */
+async function recordAttendanceSupabase(type, notes=''){
+  if(!currentUser?.id || !currentUser?.branch_id) return;
+  try {
+    const { error } = await supa.rpc('record_attendance', {
+      p_employee_id: currentUser.id,
+      p_branch_id:   currentUser.branch_id,
+      p_type:        type,
+      p_notes:       notes || null
+    });
+    if(error) console.warn('recordAttendance error:', error.message);
+  } catch(e){ console.warn('recordAttendanceSupabase error:', e); }
+}
 
 async function initAllSupabaseData(){
   if(!currentUser?.id) return;
