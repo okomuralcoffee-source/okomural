@@ -4239,12 +4239,17 @@ async function doLogin(){
   const emailInternal = SUPA_EMAIL_MAP[username.toLowerCase()]
     || (username.toLowerCase() + '@okomural.internal');
 
-  // ── 1. COBA SUPABASE AUTH ──────────────────────────────────────────────
+  // ── 1. COBA SUPABASE AUTH (dengan timeout 4 detik) ────────────────────
+  // CSP Vercel memblokir eval() dari Supabase SDK — gunakan timeout agar tidak stuck
   try {
-    const { data, error } = await supa.auth.signInWithPassword({
+    const supaPromise = supa.auth.signInWithPassword({
       email:    emailInternal,
       password: pass
     });
+    const timeoutPromise = new Promise(resolve =>
+      setTimeout(() => resolve({ data: null, error: { message: 'TIMEOUT' } }), 4000)
+    );
+    const { data, error } = await Promise.race([supaPromise, timeoutPromise]);
 
     if (!error && data?.session) {
       // Supabase berhasil — hydrate profil dari DB
@@ -4260,13 +4265,13 @@ async function doLogin(){
     }
 
     // Supabase error: credentials salah → langsung reject, jangan fallback lokal
-    if (error && error.message &&
+    if (error && error.message && error.message !== 'TIMEOUT' &&
         (error.message.includes('Invalid login') || error.message.includes('credentials') || error.message.includes('Email not confirmed'))) {
       showToast('error','Login gagal', 'Username atau password salah');
       if(btnEl){ btnEl.disabled=false; btnEl.textContent='Masuk ke Sistem'; }
       return;
     }
-    // Error lain (network/CORS/timeout) → lanjut ke fallback lokal
+    // Timeout / Error lain (network/CORS/CSP) → lanjut ke fallback lokal
   } catch(e) {
     console.warn('Supabase signIn error, fallback ke lokal:', e.message);
   }
