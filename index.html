@@ -1406,6 +1406,7 @@ async function hydrateUserFromSession(session) {
       init:        profile.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(),
       role:        roleDisplay,
       branchId:    localBranchId,
+      branchUUID:  profile.branch_id || null,
       supaId:      profile.employee_id,
       supaAuthId:  session.user.id,
       access:      'launcher'
@@ -6330,16 +6331,26 @@ function checkoutSplitP2(){ executeSplitCheckout(2); }
 function executeSplitCheckout(person){
   const items = cart.filter((_,i) => (splitAssign[i] || 1) === person);
   if(!items.length){ showToast('warning', 'Orang ' + person + ' tidak punya item'); return; }
+
+  // Deduct stok untuk items orang ini
+  const stockResult = deductStock(items);
+  if(!stockResult.ok){
+    showToast('error', 'Stok tidak cukup', stockResult.errors[0]);
+    return;
+  }
+
   const total = items.reduce((s,c) => s + c.price * c.qty, 0);
   const method = (document.querySelector('.pm-btn.active')?.textContent || 'Cash').toLowerCase();
   const hpp = items.reduce((s,c) => s + (calcHPP(c.id) || 0) * c.qty, 0);
   const tx = {
     id: 'TRX-' + Date.now() + '-P' + person,
-      kasir: currentUser.name,
+    kasir: currentUser.name,
     items: items.map(c => ({id:c.id, name:c.name, qty:c.qty, price:c.price, note:c.note||'', custom:c.custom||false})),
     subtotal: total, discount: 0, total, hpp,
     method: method === 'qris' ? 'qris' : method === 'kartu' ? 'card' : 'cash',
     memberId: null, createdAt: new Date().toISOString(), status: 'paid',
+    source: activeBranch?.id || 'CAB-001',
+    sourceName: activeBranch?.nama || 'HQ Indrapura',
     splitLabel: 'Orang ' + person
   };
   SESSION.transactions.push(tx);
@@ -6354,6 +6365,7 @@ function executeSplitCheckout(person){
   keepIndices.forEach((oldIdx, newIdx) => { newAssign[newIdx] = splitAssign[oldIdx]; });
   splitAssign = newAssign;
   syncCart();
+  logActivity('Checkout', tx.id + ' · Split P' + person + ' · Rp ' + total.toLocaleString('id'));
   showToast('success', 'Split Bill Orang ' + person + ' selesai', 'Rp ' + total.toLocaleString('id'));
   setTimeout(() => showReceipt(tx), 200);
   if(cart.length === 0){ closeSplitBill(); checkStockAlerts(); }
@@ -6934,7 +6946,9 @@ async function confirmCheckout(){
   // ── SUPABASE: RPC atomic_checkout ────────────────────────────────────────
   let supaTransactionId = null;
   // Cek apakah user login via Supabase (punya supaAuthId)
-  const hasSupaSession = !!(currentUser?.supaAuthId);
+  // Phase 2 akan handle atomic_checkout via Supabase
+  // Phase 1: gunakan local mode agar checkout tidak stuck
+  const hasSupaSession = false; // akan diaktifkan di Phase 2
   if(hasSupaSession) {
     try {
       const rpcItems = cart.map(c => ({
@@ -6945,9 +6959,9 @@ async function confirmCheckout(){
         hpp_per_unit: calcHPP(c.id) || 0
       }));
       const { data: saleId, error } = await supa.rpc('atomic_checkout', {
-        p_branch_id:      currentUser.branch_id,
-        p_staff_id:       currentUser.id,
-            p_member_id:      activeMember ? activeMember.id : null,
+        p_branch_id:      currentUser.branchUUID || null,
+        p_staff_id:       currentUser.supaId || null,
+        p_member_id:      activeMember ? activeMember.id : null,
         p_items:          rpcItems,
         p_total_amount:   finalTotal,
         p_subtotal:       cartTotal,
@@ -7381,13 +7395,27 @@ function renderHRTable(){
   const tbody=document.querySelector('#module-hr .table-wrap tbody');
   if(!tbody)return;
   const statusColor={aktif:'badge-green',izin:'badge-amber',nonaktif:'badge-red'};
-  tbody.innerHTML=KARYAWAN_DB.map(k=>`<tr>
-    <td><div class="emp-card"><div class="emp-avatar">${k.nama.split(' ').map(w=>w[0]).slice(0,2).join('')}</div><div><div style="font-size:12px;color:var(--text);font-weight:500">${k.nama}</div><div style="font-size:10px;color:var(--text3)">${k.id}</div></div></div></td>
+  const filtered = KARYAWAN_DB.filter(k => k.status !== 'dihapus');
+  tbody.innerHTML = filtered.length === 0
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Belum ada karyawan</td></tr>'
+    : filtered.map(k=>`<tr>
+    <td><div class="emp-card"><div class="emp-avatar">${k.nama.split(' ').map(w=>w[0]).slice(0,2).join('')}</div><div><div style="font-size:12px;color:var(--text);font-weight:500">${k.nama}</div><div style="font-size:10px;color:var(--text3)">${k.kode||k.id}</div></div></div></td>
     <td>${k.posisi}</td>
     <td><span class="badge ${statusColor[k.status]||'badge-gray'}">${k.status.charAt(0).toUpperCase()+k.status.slice(1)}</span></td>
     <td>${k.gaji?'Rp '+k.gaji.toLocaleString('id'):'—'}</td>
-    <td><button class="btn btn-secondary btn-sm" onclick="openDetailKaryawan('${k.nama}','${k.id}','${k.posisi}','Rp ${k.gaji.toLocaleString('id')}')">Detail</button></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-secondary btn-sm" onclick="openDetailKaryawan('${k.nama}','${k.id}','${k.posisi}','Rp ${k.gaji.toLocaleString('id')}')">Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="hapusKaryawan('${k.id}','${k.nama}')">Hapus</button>
+    </td>
   </tr>`).join('');
+}
+function hapusKaryawan(id, nama){
+  openConfirm('Hapus Karyawan', '"'+nama+'" akan dihapus permanen dari sistem. Tidak bisa dibatalkan.', 'Hapus', ()=>{
+    const idx = KARYAWAN_DB.findIndex(k => k.id === id);
+    if(idx > -1){ KARYAWAN_DB.splice(idx, 1); saveKARYAWAN(); }
+    renderHRTable();
+    showToast('success', nama + ' dihapus dari sistem');
+  });
 }
 function openMemberModal(){
   openGModal('Daftarkan Member Baru',
@@ -10793,15 +10821,15 @@ function syncShiftSidebar(){
     if(label) { label.textContent = 'Shift Aktif'; label.style.color = 'var(--green)'; }
     if(sub)   { sub.textContent = (activeShift.kasir||'') + ' · ' + dur; }
     if(btn)   { btn.className = 'pos-shift-action close'; btn.textContent = 'Tutup Shift'; }
-    if(topDot)   topDot.style.background = 'var(--green)';
-    if(topLabel) topLabel.textContent = `Shift · ${dur}`;
+    if(topDot)   { topDot.className = 'pos-shift-dot on'; }
+    if(topLabel) { topLabel.textContent = `Shift · ${dur}`; topLabel.style.color = 'var(--green)'; }
   } else {
     if(dot)   { dot.className = 'pos-shift-dot'; }
     if(label) { label.textContent = 'Shift Tutup'; label.style.color = 'var(--text)'; }
     if(sub)   { sub.textContent = 'Belum ada shift aktif'; }
     if(btn)   { btn.className = 'pos-shift-action open'; btn.textContent = 'Buka Shift'; }
-    if(topDot)   topDot.style.background = 'var(--red)';
-    if(topLabel) topLabel.textContent = 'Buka Shift';
+    if(topDot)   { topDot.className = 'pos-shift-dot'; }
+    if(topLabel) { topLabel.textContent = 'Shift Tutup'; topLabel.style.color = 'var(--text2)'; }
   }
 
   // Update tx badge
@@ -10969,13 +10997,13 @@ function confirmOpenShift(){
 
   saveShift(activeShift);
   closeShiftModal();
-  syncShiftBtn();
+  syncShiftSidebar(); // update sidebar + topbar sekaligus
   logActivity('Buka Shift', 'Modal Rp ' + opening.toLocaleString('id'));
   showToast('success', 'Shift dibuka', activeShift.kasir + ' · Modal Rp ' + opening.toLocaleString('id'));
 
-  // Refresh btn setiap menit
+  // Refresh badge setiap menit
   clearInterval(window._shiftTimer);
-  window._shiftTimer = setInterval(syncShiftBtn, 60000);
+  window._shiftTimer = setInterval(syncShiftSidebar, 60000);
 }
 
 function confirmCloseShift(){
