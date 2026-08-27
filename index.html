@@ -2835,6 +2835,30 @@ async function hydrateUserFromSession(session) {
             </div>
             <label class="toggle-sw"><input type="checkbox" id="struk-show-txid" onchange="STRUK.showTxId=this.checked;saveSTRUK();refreshStrukPreview()"><span class="toggle-track"></span></label>
           </label>
+          <!-- Auto print thermal -->
+          <label class="struk-toggle-row">
+            <div>
+              <div style="font-size:12px;font-weight:500">Auto Print Struk</div>
+              <div style="font-size:10px;color:var(--text3)">Langsung cetak ke printer thermal setelah checkout</div>
+            </div>
+            <label class="toggle-sw"><input type="checkbox" id="struk-auto-print" onchange="STRUK_CONFIG.autoPrint=this.checked;lsSave(LS_KEYS.struk,STRUK_CONFIG)"><span class="toggle-track"></span></label>
+          </label>
+        </div>
+        <!-- Pilihan lebar kertas thermal -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin:14px 0 8px">Printer Thermal</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <label style="flex:1;cursor:pointer">
+            <input type="radio" name="paper-width" value="58mm" id="pw-58" onchange="STRUK_CONFIG.paperWidth='58mm';lsSave(LS_KEYS.struk,STRUK_CONFIG)" style="display:none">
+            <div id="pw-58-btn" style="text-align:center;padding:10px;border:2px solid var(--border);border-radius:6px;font-size:12px;font-weight:600">
+              58mm<div style="font-size:10px;font-weight:400;color:var(--text3);margin-top:2px">Printer kecil</div>
+            </div>
+          </label>
+          <label style="flex:1;cursor:pointer">
+            <input type="radio" name="paper-width" value="80mm" id="pw-80" onchange="STRUK_CONFIG.paperWidth='80mm';lsSave(LS_KEYS.struk,STRUK_CONFIG)" style="display:none">
+            <div id="pw-80-btn" style="text-align:center;padding:10px;border:2px solid var(--border);border-radius:6px;font-size:12px;font-weight:600">
+              80mm<div style="font-size:10px;font-weight:400;color:var(--text3);margin-top:2px">Printer standar</div>
+            </div>
+          </label>
         </div>
         <!-- Save + Preview buttons -->
         <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
@@ -4115,7 +4139,9 @@ let _lastPrintedTx = null; // tracks last receipt for thermal print
 let STRUK_CONFIG = {
   storeName: 'OKOMURAL Coffee', address: 'Jl. Kemang Raya No.1', phone: '021-xxxxxxx',
   footer: 'Terima kasih atas kunjungan Anda!', showLogo: true, showPoints: true,
-  taxPct: 0, serviceChargePct: 0
+  taxPct: 0, serviceChargePct: 0,
+  autoPrint: false,    // auto print struk setelah checkout tanpa klik manual
+  paperWidth: '80mm',  // '58mm' atau '80mm' sesuai mesin thermal
 };
 let LOYALTY_CONFIG = { pointsPerIdr: 1000, pointsToRupiah: 100, minRedeem: 100 };
 let SESSION = {
@@ -6704,26 +6730,26 @@ function closeReceipt(){ document.getElementById('receipt-modal-overlay').classL
 function printReceipt(){
   const tx = _lastPrintedTx;
   if(!tx){ window.print(); return; }
-  buildPrintFrame(tx);
-  setTimeout(() => {
-    window.print();
-    setTimeout(() => {
-      const frame = document.getElementById('print-receipt-frame');
-      if(frame) frame.innerHTML = '';
-    }, 1000);
-  }, 120);
+  doPrintStruk(tx);
 }
 function buildPrintFrame(tx){
   const frame = document.getElementById('print-receipt-frame');
   if(!frame) return;
+  const cfg = STRUK_CONFIG || {};
   const now = new Date(tx.createdAt);
   const dateStr = now.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year:'numeric'});
   const timeStr = now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
   const fmt = n => 'Rp ' + Math.abs(n).toLocaleString('id');
+  const cabang = activeBranch?.nama || cfg.storeName || 'OKOMURAL';
+  const paperW = cfg.paperWidth || '80mm';
+  // Inject @page dengan lebar kertas yang benar
+  let styleTag = document.getElementById('print-page-style');
+  if(!styleTag){ styleTag = document.createElement('style'); styleTag.id='print-page-style'; document.head.appendChild(styleTag); }
+  styleTag.textContent = `@media print { @page { size: ${paperW} auto; margin: 3mm 3mm 8mm 3mm; } }`;
   let html = '';
-  html += '<div class="pr-center pr-large">OKOMURAL</div>';
-  html += '<div class="pr-center pr-small">HQ Indrapura · HQ Indrapura</div>';
-  html += '<div class="pr-center pr-small">Telp: 021-XXXXXXX</div>';
+  html += '<div class="pr-center pr-large">' + (cfg.storeName||'OKOMURAL').toUpperCase() + '</div>';
+  html += '<div class="pr-center pr-small">' + cabang + (cfg.address ? ' · ' + cfg.address : '') + '</div>';
+  html += '<div class="pr-center pr-small">Telp: ' + (cfg.phone||'-') + '</div>';
   html += '<hr class="pr-divider">';
   html += '<div class="pr-small">Tanggal : ' + dateStr + ' ' + timeStr + '</div>';
   html += '<div class="pr-small">Kasir   : ' + tx.kasir + '</div>';
@@ -6754,9 +6780,24 @@ function buildPrintFrame(tx){
     }
   }
   html += '<hr class="pr-divider">';
-  html += '<div class="pr-center pr-small" style="line-height:2">Terima kasih atas kunjungan Anda!<br>Simpan struk sebagai bukti pembelian<br>Instagram: @okomural · Wi-Fi: okomural2025</div>';
+  const footerText = cfg.footer || 'Terima kasih atas kunjungan Anda!';
+  html += '<div class="pr-center pr-small" style="line-height:2">' + footerText + '</div>';
+  if(cfg.showPoints && tx.memberId){
+    // Poin sudah ditampilkan di section member di atas
+  }
   html += '<div class="pr-center pr-small" style="margin-top:6px;letter-spacing:.1em">* * *</div>';
   frame.innerHTML = html;
+}
+/* ── Print struk (dipanggil dari tombol atau auto setelah checkout) ── */
+function doPrintStruk(tx){
+  buildPrintFrame(tx);
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      const frame = document.getElementById('print-receipt-frame');
+      if(frame) frame.innerHTML = '';
+    }, 2000);
+  }, 150);
 }
 /* ══════════════════════════════════════════════════
    FITUR 2: SPLIT BILL
@@ -6885,7 +6926,10 @@ function doSplitCheckout(person){
   syncCart();
   logActivity('Checkout', tx.id + ' · Split P' + person + ' · ' + method.toUpperCase() + ' · Rp ' + total.toLocaleString('id'));
   showToast('success', 'Split Bill Orang ' + person + ' selesai', method.toUpperCase() + ' · Rp ' + total.toLocaleString('id'));
-  setTimeout(() => showReceipt(tx), 200);
+  setTimeout(() => {
+    showReceipt(tx);
+    if(STRUK_CONFIG?.autoPrint) setTimeout(() => doPrintStruk(tx), 600);
+  }, 200);
   if(cart.length === 0){ closeSplitBill(); checkStockAlerts(); }
   else { renderSplitItems(); }
 }
@@ -9863,6 +9907,21 @@ function updateBrandingPanel(){
     if(nameEl) nameEl.textContent = 'Default (teks)';
     if(removeBtn) removeBtn.style.display = 'none';
   }
+  // Sync printer settings dari STRUK_CONFIG
+  const autoPrintEl = document.getElementById('struk-auto-print');
+  if(autoPrintEl) autoPrintEl.checked = !!(STRUK_CONFIG?.autoPrint);
+  const pw = STRUK_CONFIG?.paperWidth || '80mm';
+  const pw58Btn = document.getElementById('pw-58-btn');
+  const pw80Btn = document.getElementById('pw-80-btn');
+  const pw58 = document.getElementById('pw-58');
+  const pw80 = document.getElementById('pw-80');
+  if(pw58){ pw58.checked = pw==='58mm'; }
+  if(pw80){ pw80.checked = pw==='80mm'; }
+  // Visual highlight pilihan aktif
+  [['pw-58-btn','58mm'],['pw-80-btn','80mm']].forEach(([id,val]) => {
+    const el = document.getElementById(id);
+    if(el) el.style.borderColor = pw===val ? 'var(--green)' : 'var(--border)';
+  });
 }
 /* ══════════════════════════════════════════════════
    MENU PHOTO SYSTEM
