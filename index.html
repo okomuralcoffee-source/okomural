@@ -6590,6 +6590,29 @@ function checkoutSplitP2(){ executeSplitCheckout(2); }
 function executeSplitCheckout(person){
   const items = cart.filter((_,i) => (splitAssign[i] || 1) === person);
   if(!items.length){ showToast('warning', 'Orang ' + person + ' tidak punya item'); return; }
+  const method = _splitPayMethod || 'cash';
+  const total  = items.reduce((s,c) => s + c.price * c.qty, 0);
+
+  // Jika QRIS → tampilkan QRIS overlay dulu, proses TX setelah user konfirmasi
+  if(method === 'qris'){
+    _qrisSplitPerson = person;
+    _qrisPendingConfirm = false;
+    const amountEl = document.getElementById('qris-amount-val');
+    const amountInline = document.getElementById('qris-amount-inline');
+    const amtText = 'Rp ' + total.toLocaleString('id');
+    if(amountEl) amountEl.textContent = amtText;
+    if(amountInline) amountInline.textContent = amtText;
+    document.getElementById('qris-overlay').classList.add('open');
+    return; // tunggu confirmQRISPayment()
+  }
+
+  // Cash / Kartu → langsung proses
+  doSplitCheckout(person);
+}
+
+function doSplitCheckout(person){
+  const items = cart.filter((_,i) => (splitAssign[i] || 1) === person);
+  if(!items.length){ showToast('warning', 'Orang ' + person + ' tidak punya item'); return; }
 
   // Deduct stok untuk items orang ini
   const stockResult = deductStock(items);
@@ -6598,16 +6621,15 @@ function executeSplitCheckout(person){
     return;
   }
 
-  const total = items.reduce((s,c) => s + c.price * c.qty, 0);
-  // Gunakan _splitPayMethod dari payment selector di split overlay
+  const total  = items.reduce((s,c) => s + c.price * c.qty, 0);
   const method = _splitPayMethod || 'cash';
-  const hpp = items.reduce((s,c) => s + (calcHPP(c.id) || 0) * c.qty, 0);
+  const hpp    = items.reduce((s,c) => s + (calcHPP(c.id) || 0) * c.qty, 0);
   const tx = {
     id: 'TRX-' + Date.now() + '-P' + person,
     kasir: currentUser.name,
     items: items.map(c => ({id:c.id, name:c.name, qty:c.qty, price:c.price, note:c.note||'', custom:c.custom||false})),
     subtotal: total, discount: 0, total, hpp,
-    method: method, // sudah format benar: 'cash'|'qris'|'card' dari _splitPayMethod
+    method: method,
     memberId: null, createdAt: new Date().toISOString(), status: 'paid',
     source: activeBranch?.id || 'CAB-001',
     sourceName: activeBranch?.nama || 'HQ Indrapura',
@@ -6625,8 +6647,8 @@ function executeSplitCheckout(person){
   keepIndices.forEach((oldIdx, newIdx) => { newAssign[newIdx] = splitAssign[oldIdx]; });
   splitAssign = newAssign;
   syncCart();
-  logActivity('Checkout', tx.id + ' · Split P' + person + ' · Rp ' + total.toLocaleString('id'));
-  showToast('success', 'Split Bill Orang ' + person + ' selesai', 'Rp ' + total.toLocaleString('id'));
+  logActivity('Checkout', tx.id + ' · Split P' + person + ' · ' + method.toUpperCase() + ' · Rp ' + total.toLocaleString('id'));
+  showToast('success', 'Split Bill Orang ' + person + ' selesai', method.toUpperCase() + ' · Rp ' + total.toLocaleString('id'));
   setTimeout(() => showReceipt(tx), 200);
   if(cart.length === 0){ closeSplitBill(); checkStockAlerts(); }
   else { renderSplitItems(); }
@@ -8471,6 +8493,7 @@ function submitRestock(){
    QRIS PAYMENT POPUP
 ══════════════════════════════════════════════════ */
 let _qrisPendingConfirm = false;
+let _qrisSplitPerson = null; // null = normal checkout, 1|2 = split bill orang ke-n
 function selPMQRIS(el){
   // Select QRIS as payment method first
   selPM(el);
@@ -8503,9 +8526,16 @@ function closeQRIS(){
 function confirmQRISPayment(){
   _qrisPendingConfirm = true;
   document.getElementById('qris-overlay').classList.remove('open');
-  // Langsung trigger confirmCheckout
   showToast('success','Pembayaran QRIS dikonfirmasi','Memproses transaksi...');
-  setTimeout(() => confirmCheckout(), 300);
+  if(_qrisSplitPerson !== null){
+    // Split bill QRIS — eksekusi doSplitCheckout
+    const person = _qrisSplitPerson;
+    _qrisSplitPerson = null;
+    setTimeout(() => doSplitCheckout(person), 300);
+  } else {
+    // Normal checkout
+    setTimeout(() => confirmCheckout(), 300);
+  }
 }
 /* ══════════════════════════════════════════════════
    MODIFIER SYSTEM — Topping & Upsize
