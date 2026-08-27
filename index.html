@@ -5340,8 +5340,9 @@ function renderBranchReport(period){
 
 function renderLiveDashboard(){
   const el=document.getElementById('ld-kpi-row'); if(!el)return;
-  // ── Real data from POS session ──────────────────────────────────────────
-  const todayTx  = (typeof SESSION !== 'undefined' && SESSION.transactions) ? SESSION.transactions : [];
+  // ── Real data from POS session — hanya transaksi paid ──────────────────
+  const allTx   = (typeof SESSION !== 'undefined' && SESSION.transactions) ? SESSION.transactions : [];
+  const todayTx = allTx.filter(t => t.status === 'paid');
   const todayRev = todayTx.reduce((s,t) => s + (t.total||0), 0);
   const todayTxCount = todayTx.length;
   const todayAvg = todayTxCount > 0 ? Math.round(todayRev / todayTxCount) : 0;
@@ -5354,9 +5355,14 @@ function renderLiveDashboard(){
     itemCounts[i.name] = (itemCounts[i.name]||0) + (i.qty||1);
   }));
   const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  // Payment method breakdown
+  // Payment method breakdown — fix key mapping: tx.method='cash'|'qris'|'card'
   const payBreak = {Cash:0, QRIS:0, Kartu:0};
-  todayTx.forEach(t => { const m = (t.method||t.payment||'Cash'); payBreak[m] = (payBreak[m]||0) + (t.total||0); });
+  todayTx.forEach(t => {
+    const m = (t.method||'cash').toLowerCase();
+    if(m==='cash') payBreak.Cash += (t.total||0);
+    else if(m==='qris') payBreak.QRIS += (t.total||0);
+    else if(m==='card') payBreak.Kartu += (t.total||0);
+  });
   // ── Historical for chart ────────────────────────────────────────────────
   const d = BIZ_DATA.monthly;
   const cur = d[d.length-1], prev = d[d.length-2];
@@ -5972,9 +5978,10 @@ function saveBOM(publish=false){
    CASH RECONCILIATION RENDER
 ══════════════════════════════════════════════════ */
 function renderCashRecon(){
-  const txs = SESSION.transactions;
+  // Hanya transaksi paid (bukan void)
+  const txs = SESSION.transactions.filter(t => t.status === 'paid');
   const totalRev = txs.reduce((s,t)=>s+t.total,0);
-  const totalHPP = txs.reduce((s,t)=>s+t.hpp,0);
+  const totalHPP = txs.reduce((s,t)=>s+(t.hpp||0),0);
   const totalGP = totalRev - totalHPP;
   const totalCash = txs.filter(t=>t.method==='cash').reduce((s,t)=>s+t.total,0);
   const totalQRIS = txs.filter(t=>t.method==='qris').reduce((s,t)=>s+t.total,0);
@@ -6002,7 +6009,7 @@ function renderCashRecon(){
       <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
         <div>
           <div style="font-weight:500;font-size:12px">${t.items.map(i=>i.name+(i.qty>1?' x'+i.qty:'')).join(', ')}</div>
-          <div style="font-size:10px;color:var(--text3)">${new Date(t.createdAt).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})} · ${t.method.toUpperCase()}${t.memberId?' · 👤':''}</div>
+          <div style="font-size:10px;color:var(--text3)">${new Date(t.createdAt).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})} · ${t.method.toUpperCase()}${t.memberId?' · 👤':''}${t.splitLabel?' · ✂ '+t.splitLabel:''}${t.isBulkCart?' · 🛒 Bulk':''}</div>
         </div>
         <span style="font-weight:600;color:var(--text)">Rp ${t.total.toLocaleString('id')}</span>
       </div>`).join('');
@@ -9817,8 +9824,8 @@ function getSalesFiltered(){
   const fromVal = document.getElementById('st-date-from')?.value;
   const toVal   = document.getElementById('st-date-to')?.value;
   const method  = document.getElementById('st-method-filter')?.value || 'all';
-  // Use SESSION.transactions (live) + any seed data
-  let txList = [...(SESSION.transactions || [])];
+  // Hanya transaksi paid (exclude void)
+  let txList = (SESSION.transactions || []).filter(t => t.status === 'paid');
   // Add BIZ_DATA synthetic transactions if session is empty
   if(!txList.length){
     const d = BIZ_DATA.monthly;
@@ -9949,9 +9956,10 @@ function renderSalesTracking(){
         const method = (t.method||t.payment||'cash').toLowerCase();
         const disc = (t.discountBreakdown?.manual||0)+(t.discountBreakdown?.member||0)+(t.discountBreakdown?.kupon||0);
         const itemCount = (t.items||[]).reduce((s,i)=>s+(i.qty||1),0);
+        const txLabel = t.splitLabel?` <span style="color:var(--amber);font-size:9px">✂${t.splitLabel}</span>`:t.isBulkCart?` <span style="color:var(--blue);font-size:9px">🛒Bulk</span>`:'';
         return `<tr>
           <td style="font-size:11px;color:var(--text3)">${timeStr}</td>
-          <td style="font-family:monospace;font-size:10px;color:var(--text3)">${(t.id||'—').slice(-12)}</td>
+          <td style="font-family:monospace;font-size:10px;color:var(--text3)">${(t.id||'—').slice(-12)}${txLabel}</td>
           <td>${itemCount} item</td>
           <td><span class="st-method-badge ${method}">${method.toUpperCase()}</span></td>
           <td style="color:${disc>0?'var(--amber)':'var(--text3)'}">${disc>0?'Rp '+disc.toLocaleString('id'):'—'}</td>
