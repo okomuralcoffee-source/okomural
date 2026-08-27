@@ -1397,6 +1397,22 @@ const BRANCH_UUID_TO_LOCAL = {
   '11111111-0000-0000-0000-000000000002': 'CAB-002',
   '11111111-0000-0000-0000-000000000003': 'CAB-003',
 };
+// Reverse map: local ID → Supabase UUID
+const BRANCH_LOCAL_TO_UUID = {
+  'CAB-001': '11111111-0000-0000-0000-000000000001',
+  'CAB-002': '11111111-0000-0000-0000-000000000002',
+  'CAB-003': '11111111-0000-0000-0000-000000000003',
+};
+// Helper: dapatkan branch UUID dari activeBranch atau currentUser
+function getBranchUUID() {
+  if (currentUser?.branchUUID) return currentUser.branchUUID;
+  const localId = activeBranch?.id || 'CAB-001';
+  return BRANCH_LOCAL_TO_UUID[localId] || '11111111-0000-0000-0000-000000000001';
+}
+// Helper: dapatkan staff UUID (employee id dari Supabase)
+function getStaffUUID() {
+  return currentUser?.supaId || null;
+}
 
 // ── initSupabaseAuth — dipanggil saat DOMContentLoaded ───────────────────
 async function initSupabaseAuth() {
@@ -4327,15 +4343,14 @@ async function doLogin(){
   const emailInternal = SUPA_EMAIL_MAP[username.toLowerCase()]
     || (username.toLowerCase() + '@okomural.internal');
 
-  // ── 1. COBA SUPABASE AUTH (dengan timeout 4 detik) ────────────────────
-  // CSP Vercel memblokir eval() dari Supabase SDK — gunakan timeout agar tidak stuck
+  // ── 1. COBA SUPABASE AUTH (timeout 2s — CSP sudah fixed via vercel.json) ────
   try {
     const supaPromise = supa.auth.signInWithPassword({
       email:    emailInternal,
       password: pass
     });
     const timeoutPromise = new Promise(resolve =>
-      setTimeout(() => resolve({ data: null, error: { message: 'TIMEOUT' } }), 4000)
+      setTimeout(() => resolve({ data: null, error: { message: 'TIMEOUT' } }), 2000)
     );
     const { data, error } = await Promise.race([supaPromise, timeoutPromise]);
 
@@ -4884,23 +4899,21 @@ function voidTransaction(txId){
       tx.status='void';
       tx.voidedAt=new Date().toISOString();
       tx.voidedBy=currentUser.name;
-      // ── SUPABASE: UPDATE sales → void + restore inventory_stocks ──────────
+      // ── SUPABASE Phase 2: void_sale RPC (atomic: mark void + restore stok) ─
       if(tx.supaId && typeof supa !== 'undefined'){
-        supa.from('sales').update({payment_status:'void'}).eq('id',tx.supaId)
-          .then(({error})=>{ if(error) console.warn('void sales update error:',error.message); });
-        tx.items.filter(i=>!i.voided).forEach(item=>{
-          const bom=BOM_DATA[item.id];
-          if(!bom) return;
-          bom.ingredients.forEach(ing=>{
-            const inv=INV.find(i=>i.name===ing.material);
-            if(!inv?.supaId) return;
-            const restoreQty=ing.qty*(1+ing.waste_pct/100)*item.qty;
-            supa.from('inventory_stocks')
-              .update({quantity:Math.round((inv.qty)*1000)/1000, updated_at:new Date().toISOString()})
-              .eq('id',inv.supaId)
-              .then(({error})=>{ if(error) console.warn('void inv restore error:',error.message); });
-          });
-        });
+        (async () => {
+          try {
+            const { error } = await supa.rpc('void_sale', {
+              p_sale_id:   tx.supaId,
+              p_voided_by: getStaffUUID(),
+              p_reason:    'Void by ' + currentUser.name
+            });
+            if(error) console.warn('void_sale RPC error:', error.message);
+            else console.log('Sale voided in Supabase:', tx.supaId);
+          } catch(e) {
+            console.warn('void_sale exception:', e.message);
+          }
+        })();
       }
       saveSESSION();
       rebuildFinanceFromSession();
@@ -7370,22 +7383,23 @@ async function confirmCheckout(){
   if(confirmBtn){ confirmBtn.disabled=true; confirmBtn.textContent='Memproses...'; }
   // ── SUPABASE: RPC atomic_checkout ────────────────────────────────────────
   let supaTransactionId = null;
-  // Cek apakah user login via Supabase (punya supaAuthId)
-  // Phase 2 akan handle atomic_checkout via Supabase
-  // Phase 1: gunakan local mode agar checkout tidak stuck
-  const hasSupaSession = false; // akan diaktifkan di Phase 2
+  // ── SUPABASE Phase 2: atomic_checkout via RPC ───────────────────────────
+  // Aktif jika user punya Supabase auth session DAN shift sudah di-sync ke Supabase
+  const hasSupaSession = !!(currentUser?.supaAuthId && activeShift?.supaId);
   if(hasSupaSession) {
     try {
+      // product_id harus UUID — lookup dari BOM_DATA atau skip jika tidak ada
       const rpcItems = cart.map(c => ({
-        product_id:   c.id,
+        product_id:   null,          // Phase 4 (menu sync) akan isi UUID — null OK karena RPC cast ke UUID gracefully
         product_name: c.name,
         quantity:     c.qty,
         unit_price:   c.price,
         hpp_per_unit: calcHPP(c.id) || 0
       }));
       const { data: saleId, error } = await supa.rpc('atomic_checkout', {
-        p_branch_id:      currentUser.branchUUID || null,
-        p_staff_id:       currentUser.supaId || null,
+        p_branch_id:      getBranchUUID(),
+        p_staff_id:       getStaffUUID(),
+        p_shift_id:       activeShift.supaId,
         p_member_id:      activeMember ? activeMember.id : null,
         p_items:          rpcItems,
         p_total_amount:   finalTotal,
@@ -11537,6 +11551,7 @@ function confirmOpenShift(){
     totalQRIS:     0,
     totalCard:     0,
     totalTx:       0,
+    supaId:        null, // akan diisi setelah INSERT ke Supabase
   };
 
   saveShift(activeShift);
@@ -11544,6 +11559,31 @@ function confirmOpenShift(){
   syncShiftSidebar();
   logActivity('Buka Shift', kasirName + ' · Modal Rp ' + opening.toLocaleString('id'));
   showToast('success', 'Shift dibuka', kasirName + ' · Modal Rp ' + opening.toLocaleString('id'));
+
+  // ── SUPABASE: INSERT ke pos_shifts ────────────────────────────────────
+  if (currentUser?.supaAuthId) {
+    (async () => {
+      try {
+        const { data, error } = await supa.from('pos_shifts').insert({
+          branch_id:    getBranchUUID(),
+          employee_id:  getStaffUUID(),
+          status:       'open',
+          opening_cash: opening,
+          open_notes:   notes || null,
+          opened_at:    new Date().toISOString(),
+        }).select('id').single();
+        if (error) {
+          console.warn('Supabase open shift error:', error.message);
+        } else if (data?.id) {
+          activeShift.supaId = data.id;
+          saveShift(activeShift);
+          console.log('Shift synced to Supabase:', data.id);
+        }
+      } catch(e) {
+        console.warn('Supabase open shift exception:', e.message);
+      }
+    })();
+  }
 
   // Refresh badge setiap menit
   clearInterval(window._shiftTimer);
@@ -11641,6 +11681,7 @@ function confirmCloseShift(){
   SESSION.shiftLogs.push(shiftLog);
 
   const diffText = diff === 0 ? 'Pas' : diff > 0 ? `Lebih +Rp ${fmt(diff)}` : `Kurang -Rp ${fmt(Math.abs(diff))}`;
+  const shiftSupaId = shiftLog.supaId || null;
   activeShift = null;
   saveShift(null);
   clearInterval(window._shiftTimer);
@@ -11649,6 +11690,27 @@ function confirmCloseShift(){
   rebuildFinanceFromSession();
   logActivity('Tutup Shift', 'Ditutup oleh ' + closedBy + ' · ' + (activeBranch?.nama||''));
   showToast('success', 'Shift ditutup', `${closedBy} · ${diffText}`);
+
+  // ── SUPABASE: UPDATE pos_shifts → closed ──────────────────────────────
+  if (shiftSupaId) {
+    (async () => {
+      try {
+        const { error } = await supa.from('pos_shifts').update({
+          status:       'closed',
+          closing_cash: closing,
+          expected_cash: expected,
+          cash_diff:    diff,
+          close_notes:  notes || null,
+          closed_at:    new Date().toISOString(),
+        }).eq('id', shiftSupaId);
+        if (error) console.warn('Supabase close shift error:', error.message);
+        else console.log('Shift closed in Supabase:', shiftSupaId);
+      } catch(e) {
+        console.warn('Supabase close shift exception:', e.message);
+      }
+    })();
+  }
+
   // Print PDF laporan shift
   setTimeout(()=>printShiftReport(shiftLog), 500);
 }
