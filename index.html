@@ -142,6 +142,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .login-hint strong{color:#666}
 .login-btn{width:100%;background:#fff;color:#000;border:none;border-radius:2px;padding:13px;font-size:13px;font-weight:600;cursor:pointer}
 .login-btn:hover{background:#e0e0e0}
+@keyframes loginShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+.login-box.shake{animation:loginShake .4s ease}
 .login-footer{margin-top:24px;text-align:center;font-size:11px;color:#333}
 /* ── LAUNCHER ── */
 #screen-launcher{flex-direction:row;background:var(--bg)}
@@ -1515,6 +1517,7 @@ async function hydrateUserFromSession(session) {
     <input class="login-input" id="login-username" type="text" placeholder="Masukkan username..." autocomplete="username" autocapitalize="none" spellcheck="false">
     <div class="login-label">Password</div>
     <input class="login-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="login-error-msg" style="display:none;background:var(--red-dim,rgba(226,75,74,.12));border:1px solid var(--red);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--red);margin-bottom:4px;text-align:center;font-weight:600"></div>
     <div class="login-hint"><strong>Akun tersedia:</strong><br>AdminOKO — Super Admin (akses penuh)<br>TeamOKO — Kasir (absensi &amp; CRM)</div>
     <button class="login-btn" onclick="doLogin()">Masuk ke Sistem</button>
     <div class="login-footer">erp.okomural.com · v5.0 · © 2025 OKOMURAL</div>
@@ -4334,14 +4337,38 @@ function showScreen(id){
   if(typeof closeSidebar==='function') closeSidebar();
   // Stop shift clock
 }
+function showLoginError(msg){
+  const el = document.getElementById('login-error-msg');
+  const box = document.querySelector('.login-box');
+  if(el){ el.textContent = msg; el.style.display = 'block'; }
+  if(box){
+    box.classList.remove('shake');
+    void box.offsetWidth; // reflow untuk restart animation
+    box.classList.add('shake');
+    setTimeout(()=>box.classList.remove('shake'), 450);
+  }
+  // Highlight input password
+  const pw = document.getElementById('login-password');
+  if(pw){ pw.style.borderColor='var(--red)'; pw.select(); }
+}
+function clearLoginError(){
+  const el = document.getElementById('login-error-msg');
+  if(el){ el.style.display='none'; el.textContent=''; }
+  const pw = document.getElementById('login-password');
+  if(pw) pw.style.borderColor='';
+  const un = document.getElementById('login-username');
+  if(un) un.style.borderColor='';
+}
+
 async function doLogin(){
   const usernameEl = document.getElementById('login-username');
   const passEl     = document.getElementById('login-password');
   const btnEl      = document.querySelector('.login-btn');
   const username   = (usernameEl ? usernameEl.value.trim() : '').replace(/\s+/g,'');
   const pass       = passEl ? passEl.value : '';
-  if(!username){ showToast('error','Username kosong','Masukkan username Anda'); return; }
-  if(!pass)    { showToast('error','Password kosong','Masukkan password Anda'); return; }
+  clearLoginError();
+  if(!username){ showLoginError('Username tidak boleh kosong'); return; }
+  if(!pass)    { showLoginError('Password tidak boleh kosong'); return; }
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Memverifikasi...'; }
 
   // ── Lookup email exact (Supabase Auth case-sensitive) ─────────────────
@@ -4392,7 +4419,7 @@ async function doLogin(){
     // Supabase error: credentials salah → langsung reject, jangan fallback lokal
     if (error && error.message && error.message !== 'TIMEOUT' &&
         (error.message.includes('Invalid login') || error.message.includes('credentials') || error.message.includes('Email not confirmed'))) {
-      showToast('error','Login gagal', 'Username atau password salah');
+      showLoginError('Username atau password salah');
       if(btnEl){ btnEl.disabled=false; btnEl.textContent='Masuk ke Sistem'; }
       return;
     }
@@ -4416,7 +4443,7 @@ async function doLogin(){
   try {
     if(localUser){
       if(localUser.password && localUser.password !== pass){
-        showToast('error','Password salah','Periksa kembali password Anda'); return;
+        showLoginError('Password salah — periksa kembali'); return;
       }
       currentUser = {
         name:     localUser.nama || localUser.username || username,
@@ -4430,11 +4457,13 @@ async function doLogin(){
       currentUser = {...legacyUser, username};
     } else if(known){
       if(known.password !== pass){
-        showToast('error','Password salah','Periksa kembali password Anda'); return;
+        showLoginError('Password salah — periksa kembali'); return;
       }
       currentUser = known;
     } else {
-      showToast('error','Username tidak ditemukan','Periksa username Anda'); return;
+      showLoginError('Username tidak ditemukan — periksa ejaan');
+      const unEl=document.getElementById('login-username'); if(unEl) unEl.style.borderColor='var(--red)';
+      return;
     }
 
     // Set cabang
