@@ -307,8 +307,14 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .pos-shift-action{width:100%;padding:6px;border-radius:5px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
 .pos-shift-action.open{background:var(--green);color:#000}
 .pos-shift-action.close{background:var(--red-dim);color:var(--red);border:1px solid rgba(220,50,50,.3)}
-.pos-left{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)}
+.pos-left{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border);position:relative}
 @media(max-width:640px){.pos-left{border-right:none}}
+/* Shift lock overlay */
+.shift-lock-overlay{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);pointer-events:all}
+.shift-lock-icon{width:56px;height:56px;border-radius:50%;background:var(--bg2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center}
+.shift-lock-msg{font-size:14px;font-weight:700;color:#fff;text-align:center;line-height:1.4}
+.shift-lock-sub{font-size:11px;color:rgba(255,255,255,.55);text-align:center;margin-top:-8px}
+.shift-lock-btn{padding:10px 24px;border-radius:6px;border:none;background:var(--green);color:#000;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
 .pos-toolbar{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0;overflow-x:auto}
 .pos-toolbar::-webkit-scrollbar{display:none}
 .cat-tab{padding:5px 12px;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);color:var(--text2);transition:all .12s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
@@ -1718,6 +1724,15 @@ async function hydrateUserFromSession(session) {
         </div>
       </div>
       <div class="pos-grid" id="pos-menu-grid"></div>
+      <!-- Shift lock overlay — tampil saat shift belum dibuka -->
+      <div class="shift-lock-overlay" id="shift-lock-overlay" style="display:none">
+        <div class="shift-lock-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="shift-lock-msg">Buka Shift Untuk Melakukan Transaksi</div>
+        <div class="shift-lock-sub">Semua fitur POS terkunci sampai shift dibuka</div>
+        <button class="shift-lock-btn" onclick="openCloseShiftModal()">🔓 Buka Shift Sekarang</button>
+      </div>
     </div>
     <!-- Desktop cart sidebar -->
     <div class="pos-sidebar">
@@ -9579,6 +9594,18 @@ function clearMenuPhoto(){
 }
 /* ── renderMenuGrid — definitive version, photo + emoji + modifier aware ── */
 renderMenuGrid = function(cat='all'){
+  // Shift lock — tampilkan overlay jika shift belum buka
+  const lockEl = document.getElementById('shift-lock-overlay');
+  const gridEl = document.getElementById('pos-menu-grid');
+  if(!activeShift){
+    if(lockEl) lockEl.style.display = 'flex';
+    if(gridEl) gridEl.style.opacity = '0.15';
+    // Tetap render grid di belakang (terlihat blur) tapi tidak bisa diklik
+    // karena overlay pointer-events:all memblokir semua klik
+  } else {
+    if(lockEl) lockEl.style.display = 'none';
+    if(gridEl) gridEl.style.opacity = '1';
+  }
   const items = cat==='all' ? MENU : MENU.filter(m=>m.cat===cat);
   const grid = document.getElementById('pos-menu-grid');
   if(!grid) return;
@@ -11203,7 +11230,12 @@ function syncShiftSidebar(){
     if(topLabel) { topLabel.textContent = 'Shift Tutup'; topLabel.style.color = 'var(--text2)'; }
   }
 
-  // Update tx badge
+  // Sync shift-lock overlay di POS grid
+  const lockEl = document.getElementById('shift-lock-overlay');
+  const gridEl = document.getElementById('pos-menu-grid');
+  if(lockEl) lockEl.style.display = activeShift ? 'none' : 'flex';
+  if(gridEl) gridEl.style.opacity = activeShift ? '1' : '0.15';
+  // Tx badge
   const badge = document.getElementById('nav-tx-badge');
   if(badge){
     const count = SESSION.transactions.filter(t => t.status === 'paid').length;
@@ -11268,15 +11300,18 @@ function handleShiftBtn(){
 }
 
 function openOpenShiftModal(){
-  const info = document.getElementById('shift-open-info');
-  const cash = document.getElementById('shift-cash-input');
+  const info  = document.getElementById('shift-open-info');
+  const cash  = document.getElementById('shift-cash-input');
   const notes = document.getElementById('shift-open-notes');
+  const kasirInput = document.getElementById('shift-kasir-input');
   if(info)  info.textContent = (currentUser?.name || '—') + ' · ' + new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
   if(cash)  cash.value = '';
   if(notes) notes.value = '';
+  // Pre-fill nama kasir dari akun login, tapi bisa diubah
+  if(kasirInput) kasirInput.value = currentUser?.name || '';
   const modal = document.getElementById('shift-open-modal');
   if(modal){ modal.style.display = 'flex'; }
-  setTimeout(() => { const el = document.getElementById('shift-cash-input'); if(el) el.focus(); }, 100);
+  setTimeout(() => { const el = document.getElementById('shift-kasir-input'); if(el) el.select(); }, 100);
 }
 
 function openCloseShiftModal(){
@@ -11300,12 +11335,15 @@ function openCloseShiftModal(){
     `;
   }
 
-  const closing = document.getElementById('shift-closing-cash');
-  const diff    = document.getElementById('shift-diff-info');
-  const notes   = document.getElementById('shift-close-notes');
-  if(closing) closing.value = '';
-  if(diff)    diff.style.display = 'none';
-  if(notes)   notes.value = '';
+  const closing    = document.getElementById('shift-closing-cash');
+  const diff       = document.getElementById('shift-diff-info');
+  const notes      = document.getElementById('shift-close-notes');
+  const closeKasir = document.getElementById('shift-close-kasir');
+  if(closing)    closing.value = '';
+  if(diff)       diff.style.display = 'none';
+  if(notes)      notes.value = '';
+  // Pre-fill nama kasir penutup dari akun login
+  if(closeKasir) closeKasir.value = currentUser?.name || activeShift?.kasir || '';
 
   const modal = document.getElementById('shift-close-modal');
   if(modal){ modal.style.display = 'flex'; }
@@ -11346,14 +11384,23 @@ function closeShiftModal(){
 }
 
 function confirmOpenShift(){
+  const kasirEl = document.getElementById('shift-kasir-input');
   const cashEl  = document.getElementById('shift-cash-input');
   const notesEl = document.getElementById('shift-open-notes');
+  const kasirName = kasirEl?.value?.trim() || '';
   const opening = parseFloat(cashEl?.value) || 0;
   const notes   = notesEl?.value?.trim() || '';
 
+  if(!kasirName){
+    showToast('error','Nama kasir wajib diisi','Masukkan nama kasir yang bertugas');
+    if(kasirEl){ kasirEl.style.borderColor='var(--red)'; kasirEl.focus(); }
+    return;
+  }
+  if(kasirEl) kasirEl.style.borderColor = '';
+
   activeShift = {
     id:            'SHIFT-' + Date.now(),
-    kasir:         currentUser?.name || 'Staff',
+    kasir:         kasirName,
     openedAt:      new Date(),
     openingCash:   opening,
     notes:         notes,
@@ -11366,9 +11413,9 @@ function confirmOpenShift(){
 
   saveShift(activeShift);
   closeShiftModal();
-  syncShiftSidebar(); // update sidebar + topbar sekaligus
-  logActivity('Buka Shift', 'Modal Rp ' + opening.toLocaleString('id'));
-  showToast('success', 'Shift dibuka', activeShift.kasir + ' · Modal Rp ' + opening.toLocaleString('id'));
+  syncShiftSidebar();
+  logActivity('Buka Shift', kasirName + ' · Modal Rp ' + opening.toLocaleString('id'));
+  showToast('success', 'Shift dibuka', kasirName + ' · Modal Rp ' + opening.toLocaleString('id'));
 
   // Refresh badge setiap menit
   clearInterval(window._shiftTimer);
@@ -11409,7 +11456,8 @@ function printShiftReport(shiftData){
 <h1>${brand}</h1>
 <div class="sub">LAPORAN SHIFT</div>
 <hr class="divider">
-<div class="row"><span>Kasir</span><span>${s.kasir||'—'}</span></div>
+<div class="row"><span>Kasir Buka</span><span>${s.kasir||'—'}</span></div>
+${s.closedBy && s.closedBy !== s.kasir ? `<div class="row"><span>Kasir Tutup</span><span>${s.closedBy}</span></div>` : ''}
 <div class="row"><span>Cabang</span><span>${activeBranch?.nama||'HQ Indrapura'}</span></div>
 <div class="row"><span>Buka</span><span>${openedAt.toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
 <div class="row"><span>Tutup</span><span>${closedAt.toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
@@ -11441,19 +11489,22 @@ ${s.closeNotes?`<hr class="divider"><div class="section">Catatan</div><div style
 function confirmCloseShift(){
   if(!activeShift) return;
 
-  const closingEl = document.getElementById('shift-closing-cash');
-  const notesEl   = document.getElementById('shift-close-notes');
-  const closing   = parseFloat(closingEl?.value) || 0;
-  const notes     = notesEl?.value?.trim() || '';
-  const expected  = (activeShift.openingCash||0) + (activeShift.totalCash||0);
-  const diff      = closing - expected;
-  const fmt       = n => n.toLocaleString('id');
+  const closingEl    = document.getElementById('shift-closing-cash');
+  const notesEl      = document.getElementById('shift-close-notes');
+  const closeKasirEl = document.getElementById('shift-close-kasir');
+  const closing      = parseFloat(closingEl?.value) || 0;
+  const notes        = notesEl?.value?.trim() || '';
+  const closedBy     = closeKasirEl?.value?.trim() || activeShift.kasir || currentUser?.name || 'Staff';
+  const expected     = (activeShift.openingCash||0) + (activeShift.totalCash||0);
+  const diff         = closing - expected;
+  const fmt          = n => n.toLocaleString('id');
 
-  // Log shift ke SESSION
+  // Log shift ke SESSION — sertakan kasir buka & tutup
   SESSION.shiftLogs = SESSION.shiftLogs || [];
   const shiftLog = {
     ...activeShift,
     closedAt:      new Date(),
+    closedBy:      closedBy,
     closingCash:   closing,
     expectedCash:  expected,
     cashDiff:      diff,
@@ -11468,8 +11519,8 @@ function confirmCloseShift(){
   closeShiftModal();
   syncShiftBtn();
   rebuildFinanceFromSession();
-  logActivity('Tutup Shift', 'Shift selesai · ' + (activeBranch?.nama||''));
-  showToast('success', 'Shift ditutup', `Omzet · ${diffText}`);
+  logActivity('Tutup Shift', 'Ditutup oleh ' + closedBy + ' · ' + (activeBranch?.nama||''));
+  showToast('success', 'Shift ditutup', `${closedBy} · ${diffText}`);
   // Print PDF laporan shift
   setTimeout(()=>printShiftReport(shiftLog), 500);
 }
@@ -11500,6 +11551,8 @@ document.addEventListener('DOMContentLoaded', () => {
   <div style="background:var(--bg1);border:1px solid var(--border);border-radius:12px;width:100%;max-width:380px;padding:24px">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">Buka Shift</div>
     <div id="shift-open-info" style="font-size:12px;color:var(--text3);margin-bottom:20px"></div>
+    <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">NAMA KASIR *</label>
+    <input id="shift-kasir-input" type="text" placeholder="Masukkan nama kasir yang bertugas..." style="width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:12px" onkeydown="if(event.key==='Enter')document.getElementById('shift-cash-input').focus()">
     <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">MODAL AWAL KAS (Rp)</label>
     <input id="shift-cash-input" type="number" min="0" placeholder="0" style="width:100%;padding:10px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:15px;font-weight:600;font-family:inherit;box-sizing:border-box;margin-bottom:12px">
     <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">CATATAN (opsional)</label>
@@ -11519,6 +11572,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">UANG DI LACI SEKARANG (Rp)</label>
     <input id="shift-closing-cash" type="number" min="0" placeholder="0" oninput="calcShiftDiff()" style="width:100%;padding:10px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:15px;font-weight:600;font-family:inherit;box-sizing:border-box;margin-bottom:10px">
     <div id="shift-diff-info" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;font-weight:600;margin-bottom:12px;text-align:center"></div>
+    <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">DITUTUP OLEH *</label>
+    <input id="shift-close-kasir" type="text" placeholder="Nama kasir yang menutup shift..." style="width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:12px">
     <label style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.5px;display:block;margin-bottom:6px">CATATAN</label>
     <input id="shift-close-notes" type="text" placeholder="Catatan penutupan..." style="width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:20px">
     <div style="display:flex;gap:8px">
