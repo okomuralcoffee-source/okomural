@@ -2171,7 +2171,6 @@ async function hydrateUserFromSession(session) {
           <div class="nav-item" onclick="showModule('exec-summary');closeSidebar()" id="nav-exec-summary" data-roles="Owner,Manajer">Executive Summary</div>
           <div class="nav-item active" onclick="showModule('live-dashboard');closeSidebar()" id="nav-live-dashboard">Live Dashboard</div>
           <div class="nav-item" onclick="showModule('health-score');closeSidebar()" id="nav-health-score" data-roles="Owner,Manajer">Business Health Score</div>
-          <div class="nav-item" onclick="showModule('activity-log');closeSidebar()" id="nav-activity-log">🔍 Activity Log</div>
           <div class="nav-item" onclick="showModule('capex-advisory');closeSidebar()" id="nav-capex-advisory" data-roles="Owner,Manajer">CAPEX Advisory</div>
           <div class="nav-item" onclick="showModule('shareholder');closeSidebar()" id="nav-shareholder" data-roles="Owner,Manajer">Shareholder Equity</div>
           <div class="nav-item" onclick="showModule('pl-statement');closeSidebar()" id="nav-pl-statement" data-roles="Owner,Manajer">P&amp;L Statement</div>
@@ -2238,6 +2237,7 @@ async function hydrateUserFromSession(session) {
           <div class="nav-item" onclick="showModule('hr');closeSidebar()" id="nav-hr" data-roles="Owner,Manajer">Data Karyawan</div>
           <div class="nav-item" onclick="showModule('attendance');closeSidebar()" id="nav-attendance">Absensi</div>
           <div class="nav-item" onclick="showModule('payroll');closeSidebar()" id="nav-payroll" data-roles="Owner,Manajer">Payroll & Gaji</div>
+          <div class="nav-item" onclick="showModule('activity-log');closeSidebar()" id="nav-activity-log" data-roles="Owner,Manajer">🔍 Activity Log</div>
         </div>
       </div>
       <!-- Pengaturan standalone -->
@@ -3141,22 +3141,13 @@ async function hydrateUserFromSession(session) {
 </div>
 <!-- PURCHASE ORDERS -->
 <div class="module" id="module-consignment">
-  <div class="page-header"><div class="page-header-left"><h2>Consignment Register</h2><p>Produk titipan dari mitra &amp; supplier</p></div><button class="btn btn-primary btn-sm" onclick="showToast('info','Form tambah konsinyasi')">+ Titipan</button></div>
-  <div class="table-wrap">
+  <div class="page-header"><div class="page-header-left"><h2>Consignment Register</h2><p>Produk titipan dari mitra &amp; supplier</p></div><button class="btn btn-primary btn-sm" onclick="openAddKonsinyasi()">+ Titipan</button></div>
+  <div id="konsinyasi-table-wrap" class="table-wrap">
     <div class="table-header"><h3>Daftar Produk Titipan</h3></div>
-    <table><thead><tr><th>Produk</th><th>Mitra</th><th>Tgl Masuk</th><th>Titip</th><th>Terjual</th><th>Sisa</th><th>Harga</th><th>Status</th><th></th></tr></thead><tbody>
-      <tr><td style="font-weight:500">Brownies Pisang</td><td style="color:var(--text2)">Dapur Ibu Siti</td><td style="color:var(--text3)">1 Agu</td><td>30</td><td>22</td><td style="color:var(--amber)">8</td><td>Rp 18.000</td><td><span class="badge badge-green">Aktif</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Detail konsinyasi')">Detail</button></td></tr>
-      <tr><td style="font-weight:500">Klepon Original</td><td style="color:var(--text2)">UD Jajanan Barokah</td><td style="color:var(--text3)">5 Agu</td><td>50</td><td>38</td><td style="color:var(--amber)">12</td><td>Rp 5.000</td><td><span class="badge badge-green">Aktif</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Detail konsinyasi')">Detail</button></td></tr>
-      <tr><td style="font-weight:500">Kue Lapis Surabaya</td><td style="color:var(--text2)">Toko Kue Bu Rini</td><td style="color:var(--text3)">10 Agu</td><td>15</td><td>15</td><td>0</td><td>Rp 35.000</td><td><span class="badge badge-gray">Selesai</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('success','Settlemen dicatat')">Settle</button></td></tr>
-    </tbody></table>
+    <table><thead><tr><th>Produk</th><th>Mitra</th><th>Tgl Masuk</th><th>Titip</th><th>Terjual</th><th>Sisa</th><th>Harga</th><th>Komisi</th><th>Status</th><th></th></tr></thead>
+    <tbody id="konsinyasi-tbody"><tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text3)">Belum ada data konsinyasi. Klik + Titipan untuk mulai.</td></tr></tbody></table>
   </div>
-  <div class="fin-section" style="margin-top:14px"><h4>Ringkasan Konsinyasi Bulan Ini</h4>
-    <div class="line-item"><span class="lbl">Produk Titipan</span><span class="val">95 pcs</span></div>
-    <div class="line-item"><span class="lbl">Terjual</span><span class="val" style="color:var(--green)">75 pcs (79%)</span></div>
-    <div class="line-item"><span class="lbl">Pendapatan Konsinyasi</span><span class="val">Rp 848.000</span></div>
-    <div class="line-item"><span class="lbl">Komisi Mitra (25%)</span><span class="val" style="color:var(--red)">- Rp 212.000</span></div>
-    <div class="line-item total-row"><span class="lbl">Net Konsinyasi</span><span class="val">Rp 636.000</span></div>
-  </div>
+  <div class="fin-section" style="margin-top:14px" id="konsinyasi-summary"></div>
 </div>
 <!-- ══════════════════════════════════════════════════ -->
 <!-- INVENTORY & PURCHASING GROUP -->
@@ -4006,6 +3997,11 @@ let CAPITAL_DB = [
   {id:'CI-003', dari:'Mubarok (Owner)', jumlah:10000000, tanggal:'2026-06-01', keterangan:'Top-up kas operasional', tipe:'topup'},
 ];
 let capitalIdCounter = CAPITAL_DB.length + 1;
+
+// ── KONSINYASI DB ──────────────────────────────────────────────────────────
+let KONSINYASI_DB = [];
+let konsinyasiIdCounter = 1;
+function saveKONSINYASI(){ lsSave('okomural_konsinyasi_db', KONSINYASI_DB); }
 const ATT_DATA={1:'hadir',2:'hadir',3:'libur',4:'hadir',5:'hadir',6:'hadir',7:'hadir',8:'hadir',9:'hadir',10:'hadir',11:'izin',12:'hadir',13:'hadir',14:'hadir'};
 /* ══════════════════════════════════════════════════
    SESSION STORE — transaksi & data aktif sesi ini
@@ -4059,6 +4055,8 @@ function loadAllLocalData(){
   capexIdCounter= CAPEX_DB.length + 1;
   CAPITAL_DB    = lsLoad(LS_KEYS.capital,  CAPITAL_DB);
   capitalIdCounter = CAPITAL_DB.length + 1;
+  KONSINYASI_DB = lsLoad('okomural_konsinyasi_db', KONSINYASI_DB);
+  konsinyasiIdCounter = KONSINYASI_DB.length + 1;
   CRM_MEMBERS   = lsLoad(LS_KEYS.crm,     CRM_MEMBERS);
   const savedLoyalty = lsLoad(LS_KEYS.loyalty, null);
   if(savedLoyalty) Object.assign(LOYALTY_CONFIG, savedLoyalty);
@@ -4591,7 +4589,7 @@ function showModule(mod){
     'capital-injection':renderCapitalInjection,
     'expenses':()=>{ if(typeof renderBelanjaBody==='function') renderBelanjaBody(); },
     'pricelist':()=>{ if(typeof renderPricelist==='function') renderPricelist(); },
-    'consignment':()=>{ if(typeof renderConsignment==='function') renderConsignment(); },
+    'consignment': renderConsignment,
   };
   if(allRenders[mod]) setTimeout(allRenders[mod], 60);
 }
@@ -5599,11 +5597,169 @@ function renderSpecialEvents(){
   }).join('');
 }
 function openAddEventModal(){
+  const today = new Date().toISOString().slice(0,10);
   openGModal('Tambah Special Event',
-    `<div class="gfield"><label>Nama Event</label><input type="text" placeholder="Nama event..."></div>
-    <div class="gfield-row"><div class="gfield"><label>Tanggal</label><input type="date"></div><div class="gfield"><label>Venue / Lokasi</label><input type="text" placeholder="HQ Indrapura"></div></div>
-    <div class="gfield-row"><div class="gfield"><label>Target Revenue (Rp)</label><input type="number" placeholder="0"></div><div class="gfield"><label>Estimasi Biaya (Rp)</label><input type="number" placeholder="0"></div></div>`,
-    'Simpan Event',()=>showToast('success','Event ditambahkan'));
+    `<div class="gfield"><label>Nama Event *</label><input id="ev-nama" type="text" placeholder="Contoh: Maulid Nabi 1446H" class="struk-input"></div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Tanggal *</label><input id="ev-tanggal" type="date" value="${today}" class="struk-input"></div>
+      <div class="gfield"><label>Venue / Lokasi</label><input id="ev-venue" type="text" placeholder="HQ Indrapura" class="struk-input"></div>
+    </div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Target Revenue (Rp)</label><input id="ev-target" type="number" placeholder="0" class="struk-input"></div>
+      <div class="gfield"><label>Estimasi Biaya (Rp)</label><input id="ev-biaya" type="number" placeholder="0" class="struk-input"></div>
+    </div>`,
+    'Simpan Event',
+    ()=>{
+      const nama=document.getElementById('ev-nama').value.trim();
+      const tanggal=document.getElementById('ev-tanggal').value;
+      const venue=document.getElementById('ev-venue').value.trim()||'—';
+      const target=parseFloat(document.getElementById('ev-target').value)||0;
+      const cost=parseFloat(document.getElementById('ev-biaya').value)||0;
+      if(!nama){showToast('error','Nama event wajib diisi');return;}
+      const newEv={
+        id:'EV-'+Date.now(),
+        name:nama, date:tanggal, venue,
+        base:target, rev:0, cost, tx:0, status:'aktif'
+      };
+      BIZ_DATA.events.push(newEv);
+      renderSpecialEvents();
+      logActivity('Edit Data','Event baru: '+nama);
+      showToast('success','Event ditambahkan',nama+' · '+tanggal);
+    }
+  );
+}
+function deleteEvent(evId){
+  openConfirm('Hapus Event?','Data event ini akan dihapus.','Hapus',()=>{
+    const idx=BIZ_DATA.events.findIndex(e=>e.id===evId);
+    if(idx>-1) BIZ_DATA.events.splice(idx,1);
+    renderSpecialEvents();
+    showToast('info','Event dihapus');
+  });
+}
+function getActiveEvents(){
+  return BIZ_DATA.events.filter(e=>e.status==='aktif');
+}
+
+/* ══════════════════════════════════════════════════
+   CONSIGNMENT REGISTER — CRUD lengkap
+══════════════════════════════════════════════════ */
+function renderConsignment(){
+  const tbody=document.getElementById('konsinyasi-tbody');
+  const summary=document.getElementById('konsinyasi-summary');
+  if(!tbody) return;
+  if(KONSINYASI_DB.length===0){
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text3)">Belum ada data konsinyasi. Klik + Titipan untuk mulai.</td></tr>';
+    if(summary) summary.innerHTML='';
+    return;
+  }
+  tbody.innerHTML=KONSINYASI_DB.map(k=>{
+    const sisa=k.qty-(k.terjual||0);
+    const pend=(k.terjual||0)*k.harga;
+    const kom=Math.round(pend*(k.komisi/100));
+    const net=pend-kom;
+    const statusClass=k.status==='selesai'?'badge-gray':sisa<=0?'badge-blue':'badge-green';
+    const statusTxt=k.status==='selesai'?'Selesai':sisa<=0?'Habis':'Aktif';
+    return `<tr>
+      <td style="font-weight:500">${k.produk}</td>
+      <td style="color:var(--text2)">${k.mitra}</td>
+      <td style="color:var(--text3);font-size:11px">${k.tanggal}</td>
+      <td>${k.qty}</td>
+      <td style="color:var(--green)">${k.terjual||0}</td>
+      <td style="color:${sisa>0?'var(--amber)':'var(--text3)'}">${sisa}</td>
+      <td>Rp ${k.harga.toLocaleString('id')}</td>
+      <td style="font-size:11px">${k.komisi}%</td>
+      <td><span class="badge ${statusClass}">${statusTxt}</span></td>
+      <td style="display:flex;gap:4px">
+        ${k.status!=='selesai'?`<button class="btn btn-primary btn-sm" onclick="updateTerjual('${k.id}')">Update</button>
+        <button class="btn btn-secondary btn-sm" onclick="settleKonsinyasi('${k.id}')">Settle</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteKonsinyasi('${k.id}')">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+  // Summary
+  const aktif=KONSINYASI_DB.filter(k=>k.status!=='selesai');
+  const totalTitip=aktif.reduce((s,k)=>s+k.qty,0);
+  const totalTerjual=aktif.reduce((s,k)=>s+(k.terjual||0),0);
+  const totalPend=aktif.reduce((s,k)=>s+(k.terjual||0)*k.harga,0);
+  const totalKom=aktif.reduce((s,k)=>s+Math.round((k.terjual||0)*k.harga*(k.komisi/100)),0);
+  if(summary) summary.innerHTML=`<h4>Ringkasan Konsinyasi</h4>
+    <div class="line-item"><span class="lbl">Produk Titipan</span><span class="val">${totalTitip} pcs</span></div>
+    <div class="line-item"><span class="lbl">Terjual</span><span class="val" style="color:var(--green)">${totalTerjual} pcs${totalTitip?` (${Math.round(totalTerjual/totalTitip*100)}%)`:''}  </span></div>
+    <div class="line-item"><span class="lbl">Pendapatan Bruto</span><span class="val">Rp ${totalPend.toLocaleString('id')}</span></div>
+    <div class="line-item"><span class="lbl">Komisi Mitra</span><span class="val" style="color:var(--red)">- Rp ${totalKom.toLocaleString('id')}</span></div>
+    <div class="line-item total-row"><span class="lbl">Net Konsinyasi</span><span class="val">Rp ${(totalPend-totalKom).toLocaleString('id')}</span></div>`;
+}
+function openAddKonsinyasi(){
+  const today=new Date().toISOString().slice(0,10);
+  openGModal('Tambah Produk Titipan',
+    `<div class="gfield"><label>Nama Produk *</label><input id="ks-produk" type="text" placeholder="Contoh: Brownies Pisang" class="struk-input"></div>
+    <div class="gfield"><label>Nama Mitra / Supplier *</label><input id="ks-mitra" type="text" placeholder="Contoh: Dapur Ibu Siti" class="struk-input"></div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Jumlah Titipan (pcs) *</label><input id="ks-qty" type="number" min="1" placeholder="30" class="struk-input"></div>
+      <div class="gfield"><label>Harga Jual / pcs (Rp) *</label><input id="ks-harga" type="number" min="0" placeholder="18000" class="struk-input"></div>
+    </div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Komisi Mitra (%)</label><input id="ks-komisi" type="number" min="0" max="100" value="25" class="struk-input"></div>
+      <div class="gfield"><label>Tanggal Masuk *</label><input id="ks-tanggal" type="date" value="${today}" class="struk-input"></div>
+    </div>`,
+    'Tambah Titipan',
+    ()=>{
+      const produk=document.getElementById('ks-produk').value.trim();
+      const mitra=document.getElementById('ks-mitra').value.trim();
+      const qty=parseInt(document.getElementById('ks-qty').value)||0;
+      const harga=parseFloat(document.getElementById('ks-harga').value)||0;
+      const komisi=parseFloat(document.getElementById('ks-komisi').value)||25;
+      const tanggal=document.getElementById('ks-tanggal').value;
+      if(!produk||!mitra){showToast('error','Nama produk & mitra wajib diisi');return;}
+      if(!qty||!harga){showToast('error','Jumlah & harga wajib diisi');return;}
+      KONSINYASI_DB.push({id:'KS-'+String(konsinyasiIdCounter++).padStart(3,'0'),produk,mitra,qty,harga,komisi,tanggal,terjual:0,status:'aktif'});
+      saveKONSINYASI();
+      renderConsignment();
+      showToast('success','Titipan ditambahkan',produk+' · '+qty+' pcs dari '+mitra);
+    }
+  );
+}
+function updateTerjual(id){
+  const k=KONSINYASI_DB.find(x=>x.id===id);if(!k)return;
+  const sisa=k.qty-(k.terjual||0);
+  openGModal('Update Penjualan — '+k.produk,
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:12px">Titipan: ${k.qty} pcs · Terjual: ${k.terjual||0} pcs · Sisa: ${sisa} pcs</div>
+    <div class="gfield"><label>Tambah Terjual (pcs)</label><input id="ut-tambah" type="number" min="1" max="${sisa}" placeholder="Contoh: 5" class="struk-input"></div>`,
+    'Update',
+    ()=>{
+      const tambah=parseInt(document.getElementById('ut-tambah').value)||0;
+      if(!tambah||tambah<1){showToast('error','Jumlah harus lebih dari 0');return;}
+      if(tambah>sisa){showToast('error','Melebihi sisa stok ('+sisa+' pcs)');return;}
+      k.terjual=(k.terjual||0)+tambah;
+      saveKONSINYASI();
+      renderConsignment();
+      showToast('success','Penjualan diperbarui',k.produk+' +'+tambah+' pcs terjual');
+    }
+  );
+}
+function settleKonsinyasi(id){
+  const k=KONSINYASI_DB.find(x=>x.id===id);if(!k)return;
+  const pend=(k.terjual||0)*k.harga;
+  const kom=Math.round(pend*(k.komisi/100));
+  openConfirm(`Settle Konsinyasi — ${k.produk}`,
+    `Terjual: ${k.terjual||0}/${k.qty} pcs · Pendapatan: Rp ${pend.toLocaleString('id')} · Komisi: Rp ${kom.toLocaleString('id')}`,
+    'Settle & Selesai',
+    ()=>{
+      k.status='selesai';
+      saveKONSINYASI();
+      renderConsignment();
+      showToast('success','Konsinyasi diselesaikan','Net: Rp '+(pend-kom).toLocaleString('id'));
+    }
+  );
+}
+function deleteKonsinyasi(id){
+  openConfirm('Hapus Titipan?','Data konsinyasi ini akan dihapus.','Hapus',()=>{
+    const idx=KONSINYASI_DB.findIndex(x=>x.id===id);
+    if(idx>-1) KONSINYASI_DB.splice(idx,1);
+    saveKONSINYASI();
+    renderConsignment();
+    showToast('info','Data konsinyasi dihapus');
+  });
 }
 /* ══════════════════════════════════════════════════
    BOM EDITOR LOGIC
@@ -7380,7 +7536,11 @@ function openDetailKaryawan(nama,emp,posisi,gaji){
     <div class="gfield"><label>No. HP</label><input id="dk-hp" type="tel" value="${k.hp||''}"></div>
     <div class="gfield"><label>Status</label><select id="dk-status" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px"><option${k.status==='aktif'?' selected':''}>aktif</option><option${k.status==='izin'?' selected':''}>izin</option><option${k.status==='nonaktif'?' selected':''}>nonaktif</option></select></div>
     <hr class="gdivider">
-    <div class="gdanger-zone"><span>Nonaktifkan akun karyawan ini</span><button class="btn btn-danger btn-sm" onclick="closeGModal();openConfirm('Nonaktifkan Karyawan','Akun ${nama} akan dinonaktifkan.','Nonaktifkan',()=>{const kr=KARYAWAN_DB.find(x=>x.id==='${emp}');if(kr){kr.status='nonaktif';saveKARYAWAN();}renderHRTable();showToast('warning','${nama} dinonaktifkan')})">Nonaktifkan</button></div>`,
+    <div class="gdanger-zone" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="flex:1;min-width:120px">Kelola akun karyawan</span>
+      <button class="btn btn-secondary btn-sm" onclick="closeGModal();openConfirm('Nonaktifkan Karyawan','Akun ${nama} akan dinonaktifkan.','Nonaktifkan',()=>{const kr=KARYAWAN_DB.find(x=>x.id==='${emp}');if(kr){kr.status='nonaktif';saveKARYAWAN();}renderHRTable();showToast('warning','${nama} dinonaktifkan')})">Nonaktifkan</button>
+      <button class="btn btn-danger btn-sm" onclick="closeGModal();openConfirm('Hapus Permanen','Data ${nama} akan dihapus permanen dari sistem. Tidak bisa dikembalikan.','Hapus Permanen',()=>{const idx=KARYAWAN_DB.findIndex(x=>x.id==='${emp}');if(idx>-1){KARYAWAN_DB.splice(idx,1);saveKARYAWAN();}renderHRTable();showToast('error','${nama} dihapus permanen')})">Hapus Permanen</button>
+    </div>`,
     'Simpan Perubahan',
     ()=>{
       const kr=KARYAWAN_DB.find(x=>x.id===emp);
@@ -7624,6 +7784,14 @@ function openTambahUser(){
     }
   );
 }
+function toggleCabangStatus(nama){
+  const cab=CABANG_DB.find(c=>c.nama===nama);
+  if(!cab) return;
+  cab.status = cab.status==='aktif' ? 'nonaktif' : 'aktif';
+  saveCABANG();
+  renderSettingsCabang();
+  showToast(cab.status==='aktif'?'success':'warning', cab.nama + ' ' + (cab.status==='aktif'?'diaktifkan':'dinonaktifkan'));
+}
 function renderSettingsCabang(){
   const tbody=document.querySelector('#settings-cabang tbody');
   if(!tbody)return;
@@ -7631,7 +7799,10 @@ function renderSettingsCabang(){
     <td style="color:var(--text);font-weight:500">${c.nama}</td>
     <td>${c.alamat}</td>
     <td><span class="badge ${c.status==='aktif'?'badge-green':'badge-gray'}">${c.status.charAt(0).toUpperCase()+c.status.slice(1)}</span></td>
-    <td><button class="btn btn-secondary btn-sm" onclick="openEditCabang('${c.nama}','${c.alamat}')">Edit</button></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-secondary btn-sm" onclick="openEditCabang('${c.nama}','${c.alamat}')">Edit</button>
+      <button class="btn ${c.status==='aktif'?'btn-danger':'btn-primary'} btn-sm" onclick="toggleCabangStatus('${c.nama}')">${c.status==='aktif'?'Nonaktifkan':'Aktifkan'}</button>
+    </td>
   </tr>`).join('');
 }
 function renderSettingsUser(){
@@ -11010,6 +11181,69 @@ function confirmOpenShift(){
   window._shiftTimer = setInterval(syncShiftSidebar, 60000);
 }
 
+function printShiftReport(shiftData){
+  const s = shiftData;
+  const fmt = n => (n||0).toLocaleString('id');
+  const openedAt = new Date(s.openedAt);
+  const closedAt = new Date(s.closedAt||Date.now());
+  const dur = Math.round((closedAt - openedAt)/60000);
+  const h = Math.floor(dur/60), m = dur%60;
+  const durStr = h>0 ? h+'j '+m+'m' : m+'m';
+  const diff = (s.cashDiff||0);
+  const diffTxt = diff===0?'Pas':diff>0?`Lebih +Rp ${fmt(diff)}`:`Kurang -Rp ${fmt(Math.abs(diff))}`;
+  const brand = (BRAND&&BRAND.name)||'OKOMURAL';
+  // Ambil item terjual dari SESSION.transactions selama shift ini
+  const shiftTx = (SESSION.transactions||[]).filter(t=>t.status==='paid');
+  const itemCounts={};
+  shiftTx.forEach(t=>(t.items||[]).forEach(i=>{itemCounts[i.name]=(itemCounts[i.name]||0)+(i.qty||1);}));
+  const topItems=Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Laporan Shift</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;max-width:360px;margin:0 auto;padding:16px}
+  h1{font-size:16px;text-align:center;margin:0 0 2px}
+  .sub{text-align:center;color:#666;font-size:10px;margin-bottom:12px}
+  .divider{border:none;border-top:1px dashed #999;margin:10px 0}
+  .row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}
+  .row.total{font-weight:700;font-size:13px;border-top:1px solid #111;margin-top:6px;padding-top:6px}
+  .section{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#555;margin:10px 0 4px}
+  table{width:100%;border-collapse:collapse;font-size:10px}
+  td{padding:3px 4px;border-bottom:1px solid #eee}
+  td:last-child{text-align:right}
+  .footer{text-align:center;font-size:10px;color:#666;margin-top:14px}
+  @media print{body{margin:0;padding:8px}}
+</style></head><body>
+<h1>${brand}</h1>
+<div class="sub">LAPORAN SHIFT</div>
+<hr class="divider">
+<div class="row"><span>Kasir</span><span>${s.kasir||'—'}</span></div>
+<div class="row"><span>Cabang</span><span>${activeBranch?.nama||'HQ Indrapura'}</span></div>
+<div class="row"><span>Buka</span><span>${openedAt.toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
+<div class="row"><span>Tutup</span><span>${closedAt.toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
+<div class="row"><span>Durasi</span><span>${durStr}</span></div>
+<hr class="divider">
+<div class="section">Ringkasan Penjualan</div>
+<div class="row"><span>Total Transaksi</span><span>${s.totalTx||0}</span></div>
+<div class="row"><span>Cash</span><span>Rp ${fmt(s.totalCash||0)}</span></div>
+<div class="row"><span>QRIS</span><span>Rp ${fmt(s.totalQRIS||0)}</span></div>
+<div class="row"><span>Kartu</span><span>Rp ${fmt(s.totalCard||0)}</span></div>
+<div class="row total"><span>Total Omzet</span><span>Rp ${fmt(s.totalRevenue||0)}</span></div>
+<hr class="divider">
+<div class="section">Kas</div>
+<div class="row"><span>Modal Awal</span><span>Rp ${fmt(s.openingCash||0)}</span></div>
+<div class="row"><span>Cash Masuk</span><span>Rp ${fmt(s.totalCash||0)}</span></div>
+<div class="row"><span>Expected</span><span>Rp ${fmt(s.expectedCash||0)}</span></div>
+<div class="row"><span>Aktual</span><span>Rp ${fmt(s.closingCash||0)}</span></div>
+<div class="row total"><span>Selisih</span><span>${diffTxt}</span></div>
+${topItems.length>0?`<hr class="divider">
+<div class="section">Top Menu Terjual</div>
+<table>${topItems.map(([n,q],i)=>`<tr><td>#${i+1} ${n}</td><td>${q}x</td></tr>`).join('')}</table>`:''}
+${s.closeNotes?`<hr class="divider"><div class="section">Catatan</div><div style="font-size:11px;color:#333">${s.closeNotes}</div>`:''}
+<div class="footer">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
+</body></html>`;
+  const w=window.open('','_blank','width=420,height=700');
+  if(w){ w.document.write(html); w.document.close(); setTimeout(()=>w.print(),400); }
+}
+
 function confirmCloseShift(){
   if(!activeShift) return;
 
@@ -11023,14 +11257,15 @@ function confirmCloseShift(){
 
   // Log shift ke SESSION
   SESSION.shiftLogs = SESSION.shiftLogs || [];
-  SESSION.shiftLogs.push({
+  const shiftLog = {
     ...activeShift,
     closedAt:      new Date(),
     closingCash:   closing,
     expectedCash:  expected,
     cashDiff:      diff,
     closeNotes:    notes,
-  });
+  };
+  SESSION.shiftLogs.push(shiftLog);
 
   const diffText = diff === 0 ? 'Pas' : diff > 0 ? `Lebih +Rp ${fmt(diff)}` : `Kurang -Rp ${fmt(Math.abs(diff))}`;
   activeShift = null;
@@ -11041,6 +11276,8 @@ function confirmCloseShift(){
   rebuildFinanceFromSession();
   logActivity('Tutup Shift', 'Shift selesai · ' + (activeBranch?.nama||''));
   showToast('success', 'Shift ditutup', `Omzet · ${diffText}`);
+  // Print PDF laporan shift
+  setTimeout(()=>printShiftReport(shiftLog), 500);
 }
 
 /* ── INIT — dipanggil setelah semua fungsi terdefinisi ── */
