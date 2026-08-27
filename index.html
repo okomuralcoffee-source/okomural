@@ -1978,6 +1978,16 @@ async function hydrateUserFromSession(session) {
       <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-bottom:6px">SUMBER TRANSAKSI</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="bulk-source-btns"></div>
     </div>
+
+    <!-- Special Event Tag (muncul hanya jika ada event aktif) -->
+    <div id="bulk-event-tag-section" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-bottom:6px">🎪 TAG KE SPECIAL EVENT <span style="color:var(--text3);font-weight:400">(opsional)</span></div>
+      <select id="bulk-event-select" onchange="selectBulkEvent(this.value)" style="width:100%;background:var(--bg1);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;font-family:inherit">
+        <option value="">— Tidak tag ke event —</option>
+      </select>
+      <div id="bulk-event-preview" style="margin-top:6px;font-size:11px;color:var(--green);display:none"></div>
+    </div>
+
     <!-- Mode toggle: per item vs total langsung -->
     <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:14px">
       <button id="bulk-mode-item" onclick="setBulkMode('item')" style="flex:1;padding:7px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--green);color:#000">Per Item</button>
@@ -5570,31 +5580,66 @@ function renderSpecialEvents(){
   else if(eventSortKey==='revenue') evs.sort((a,b)=>b.rev-a.rev);
   const totalRev=evs.reduce((s,e)=>s+e.rev,0);
   const totalProfit=evs.reduce((s,e)=>s+(e.rev-e.cost),0);
-  const avgMargin=(evs.reduce((s,e)=>s+(e.rev-e.cost)/e.rev,0)/evs.length*100).toFixed(1);
+  const avgMarginRaw=evs.length>0&&totalRev>0?(totalProfit/totalRev*100).toFixed(1):'0.0';
   el.innerHTML=
-    kpiHTML(ICON_TX,'Total Events',evs.length,'Agustus 2025',1,'0%')+
-    kpiHTML(ICON_DOLLAR,'Total Revenue',rp(totalRev),'Semua event',1,'Rp 0')+
-    kpiHTML(ICON_TREND,'Total Net Profit',rp(totalProfit),'Setelah biaya event',1,'Rp 0')+
-    kpiHTML(ICON_PCT,'Avg Profit Margin',avgMargin+'%','Rata-rata margin',1,'0.0%');
+    kpiHTML(ICON_TX,'Total Events',evs.length,'Event terdaftar',1,'0')+
+    kpiHTML(ICON_DOLLAR,'Total Revenue',rp(totalRev),'Akumulasi semua event',totalRev>0?1:0,'Rp 0')+
+    kpiHTML(ICON_TREND,'Total Net Profit',rp(totalProfit),'Setelah biaya event',totalProfit>0?1:-1,'Rp 0')+
+    kpiHTML(ICON_PCT,'Avg Profit Margin',avgMarginRaw+'%','Rata-rata margin',parseFloat(avgMarginRaw)>0?1:0,'0.0%');
   const list=document.getElementById('se-event-list'); if(!list)return;
+  if(evs.length===0){
+    list.innerHTML=`<div style="text-align:center;padding:32px;color:var(--text3)">
+      <div style="font-size:32px;margin-bottom:8px">🎪</div>
+      <div style="font-size:13px;font-weight:600">Belum ada Special Event</div>
+      <div style="font-size:11px;margin-top:4px">Klik + Add Event untuk mencatat event & melacak omzetnya</div>
+    </div>`;
+    return;
+  }
   list.innerHTML=evs.map(e=>{
-    const profit=e.rev-e.cost,margin=(profit/e.rev*100).toFixed(1);
-    const vsPct=Math.round((e.rev-e.base)/e.base*100);
+    const profit=e.rev-e.cost;
+    const margin=e.rev>0?(profit/e.rev*100).toFixed(1):'0.0';
+    const pct=e.base>0?Math.min(100,Math.round(e.rev/e.base*100)):0;
+    const statusBadge=e.status==='selesai'
+      ?'<span class="badge badge-gray" style="font-size:10px">Selesai</span>'
+      :pct>=100?'<span class="badge badge-green" style="font-size:10px">✓ Target Tercapai</span>'
+      :'<span class="badge badge-amber" style="font-size:10px">Aktif</span>';
+    const progressBar=e.base>0?`
+      <div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px">
+          <span>Progress vs Target</span><span>${pct}% · ${rp(e.rev)} / ${rp(e.base)}</span>
+        </div>
+        <div style="height:5px;background:var(--bg3);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${pct>=100?'var(--green)':pct>=60?'var(--amber)':'var(--blue)'};border-radius:3px;transition:width .3s"></div>
+        </div>
+      </div>`:'';
     return `<div class="se-event-card">
-      <div>
-        <div class="se-event-name">${e.name}</div>
-        <div class="se-event-meta">${e.date} · ${e.venue}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <div class="se-event-name">${e.name}</div>${statusBadge}
+        </div>
+        <div class="se-event-meta">📅 ${e.date} · 📍 ${e.venue||'—'} · ${e.tx||0} transaksi</div>
         <div class="se-event-stats">
           <div class="se-stat"><div class="sl">Revenue</div><div class="sv">${rp(e.rev)}</div></div>
           <div class="se-stat"><div class="sl">Biaya</div><div class="sv" style="color:var(--red)">${rp(e.cost)}</div></div>
-          <div class="se-stat"><div class="sl">Net Profit</div><div class="sv" style="color:var(--green)">${rp(profit)}</div></div>
+          <div class="se-stat"><div class="sl">Net Profit</div><div class="sv" style="color:${profit>=0?'var(--green)':'var(--red)'}">${rp(profit)}</div></div>
           <div class="se-stat"><div class="sl">Margin</div><div class="sv">${margin}%</div></div>
-          <div class="se-stat"><div class="sl">Transaksi</div><div class="sv">${e.tx}</div></div>
         </div>
+        ${progressBar}
       </div>
-      <span class="se-vs-badge ${vsPct>=40?'up':'med'}">+${vsPct}% vs normal</span>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0">
+        ${e.status!=='selesai'?`<button class="btn btn-secondary btn-sm" style="font-size:10px" onclick="settleEvent('${e.id}')">Selesai</button>`:''}
+        <button class="btn btn-danger btn-sm" style="font-size:10px" onclick="deleteEvent('${e.id}')">Hapus</button>
+      </div>
     </div>`;
   }).join('');
+}
+function settleEvent(evId){
+  const ev=BIZ_DATA.events.find(e=>e.id===evId); if(!ev)return;
+  openConfirm('Selesaikan Event?',ev.name+' akan ditandai selesai. Revenue final: '+rp(ev.rev),'Selesaikan',()=>{
+    ev.status='selesai';
+    renderSpecialEvents();
+    showToast('success','Event diselesaikan',ev.name+' · Net: '+rp(ev.rev-ev.cost));
+  });
 }
 function openAddEventModal(){
   const today = new Date().toISOString().slice(0,10);
@@ -7169,7 +7214,14 @@ async function confirmCheckout(){
     status: 'paid'
   };
   SESSION.transactions.push(tx);
-  logActivity('Checkout', tx.id + ' · Rp ' + tx.total.toLocaleString('id') + ' · ' + (tx.sourceName||activeBranch?.nama||''));
+  // Tag ke Special Event jika ada item cart yang punya eventId
+  const cartEventIds = [...new Set(cart.map(c=>c.eventId).filter(Boolean))];
+  cartEventIds.forEach(evId => {
+    const evItems = cart.filter(c=>c.eventId===evId);
+    const evAmt = evItems.reduce((s,c)=>s+c.price*c.qty, 0);
+    tagTransactionToEvent(evId, evAmt, 1);
+  });
+  logActivity('Checkout', tx.id + ' · Rp ' + tx.total.toLocaleString('id') + ' · ' + (tx.sourceName||activeBranch?.nama||'') + (cartEventIds.length>0?' · 🎪 Event':''));
   // Kupon: increment usage
   if(activeKupon && typeof KUPON_DB !== 'undefined'){
     const k = KUPON_DB.find(x => x.id === activeKupon.id);
@@ -7940,6 +7992,7 @@ function setBulkMode(mode){
 }
 
 let _bulkPayMethod = 'cash';
+let _bulkTaggedEventId = null; // ID event yang di-tag dari bulk order
 function selectBulkPay(btn, method){
   _bulkPayMethod = method;
   document.querySelectorAll('.bulk-pay-btn').forEach(b => {
@@ -7968,6 +8021,9 @@ function openBulkModal(id){
   setBulkMode('item');
   // Render source buttons
   renderBulkSourceBtns();
+  // Populate event tag dropdown
+  _bulkTaggedEventId = null;
+  renderBulkEventDropdown();
   // Fill item info
   document.getElementById('bulk-item-emoji').textContent = item.emoji || '☕';
   document.getElementById('bulk-item-name').textContent  = item.name;
@@ -7982,6 +8038,44 @@ function openBulkModal(id){
 function closeBulkModal(){
   document.getElementById('bulk-modal-overlay').classList.remove('open');
   bulkCurrentItem = null;
+  _bulkTaggedEventId = null;
+}
+
+function renderBulkEventDropdown(){
+  const section = document.getElementById('bulk-event-tag-section');
+  const select  = document.getElementById('bulk-event-select');
+  const preview = document.getElementById('bulk-event-preview');
+  if(!section || !select) return;
+  const aktif = getActiveEvents();
+  if(aktif.length === 0){
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  select.innerHTML = '<option value="">— Tidak tag ke event —</option>' +
+    aktif.map(e => `<option value="${e.id}">${e.name} · ${e.date} · ${e.venue||'—'}</option>`).join('');
+  select.value = '';
+  if(preview){ preview.style.display = 'none'; preview.textContent = ''; }
+}
+
+function selectBulkEvent(evId){
+  _bulkTaggedEventId = evId || null;
+  const preview = document.getElementById('bulk-event-preview');
+  if(!preview) return;
+  if(!evId){ preview.style.display='none'; return; }
+  const ev = BIZ_DATA.events.find(e=>e.id===evId);
+  if(!ev){ preview.style.display='none'; return; }
+  const pct = ev.base>0 ? Math.round(ev.rev/ev.base*100) : 0;
+  preview.style.display = 'block';
+  preview.innerHTML = `✓ Omzet event ini akan terakumulasi ke <strong>${ev.name}</strong> · Progress: Rp ${ev.rev.toLocaleString('id')} / Rp ${ev.base.toLocaleString('id')} (${pct}%)`;
+}
+
+function tagTransactionToEvent(evId, amount, txCount){
+  if(!evId) return;
+  const ev = BIZ_DATA.events.find(e=>e.id===evId);
+  if(!ev) return;
+  ev.rev  = (ev.rev  || 0) + amount;
+  ev.tx   = (ev.tx   || 0) + (txCount||1);
 }
 
 function changeBulkQty(delta){
@@ -8033,18 +8127,27 @@ function confirmBulkAdd(){
       source:     source.id,
       sourceName: source.nama,
       isBulkCart: true,
+      eventId:    _bulkTaggedEventId || null,
       createdAt:  new Date().toISOString(),
       status:     'paid'
     };
     SESSION.transactions.push(tx);
     recordToShift(tx.total, tx.method, tx.hpp || 0);
-    logActivity('Checkout', tx.id + ' · Cart · Rp ' + tx.total.toLocaleString('id') + ' · ' + (tx.sourceName||''));
+    // Tag ke Special Event jika dipilih
+    if(_bulkTaggedEventId){
+      tagTransactionToEvent(_bulkTaggedEventId, amt, 1);
+      const taggedEv = BIZ_DATA.events.find(e=>e.id===_bulkTaggedEventId);
+      logActivity('Checkout', tx.id + ' · Cart · Rp ' + tx.total.toLocaleString('id') + ' · ' + (tx.sourceName||'') + ' · Event: ' + (taggedEv?.name||''));
+    } else {
+      logActivity('Checkout', tx.id + ' · Cart · Rp ' + tx.total.toLocaleString('id') + ' · ' + (tx.sourceName||''));
+    }
     saveSESSION();
     rebuildFinanceFromSession();
     closeBulkModal();
     // Update riwayat badge
     syncShiftSidebar();
-    showToast('success', 'Transaksi dicatat', source.nama + ' · Rp ' + amt.toLocaleString('id'));
+    const evName = _bulkTaggedEventId ? BIZ_DATA.events.find(e=>e.id===_bulkTaggedEventId)?.name : null;
+    showToast('success', 'Transaksi dicatat', source.nama + ' · Rp ' + amt.toLocaleString('id') + (evName ? ' · 🎪 '+evName : ''));
     return;
   }
 
@@ -8065,12 +8168,16 @@ function confirmBulkAdd(){
 
 function doAddBulkToCart(qty, source){
   const item = bulkCurrentItem;
-  const ex = cart.find(c => c.id === item.id);
+  const ex = cart.find(c => c.id === item.id && c.eventId === (_bulkTaggedEventId||null));
   if(ex){ ex.qty += qty; }
-  else { cart.push({...item, qty, note: '', source: source?.id, sourceName: source?.nama}); }
+  else { cart.push({...item, qty, note: '', source: source?.id, sourceName: source?.nama, eventId: _bulkTaggedEventId||null}); }
   syncCart();
+  const evName = _bulkTaggedEventId ? BIZ_DATA.events.find(e=>e.id===_bulkTaggedEventId)?.name : null;
   closeBulkModal();
-  showToast('success', item.name + ' ×' + qty, source?.nama ? '(' + source.nama + ') Rp ' + (item.price*qty).toLocaleString('id') : 'Rp ' + (item.price*qty).toLocaleString('id'));
+  showToast('success', item.name + ' ×' + qty,
+    (source?.nama ? '('+source.nama+') ' : '') +
+    'Rp ' + (item.price*qty).toLocaleString('id') +
+    (evName ? ' · 🎪 '+evName : ''));
 }
 /* ── Patch renderMenuGrid untuk support bulk mode onclick ── */
 function renderMenuGrid(cat='all'){
