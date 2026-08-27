@@ -4363,21 +4363,30 @@ async function doLogin(){
       password: pass
     });
     const timeoutPromise = new Promise(resolve =>
-      setTimeout(() => resolve({ data: null, error: { message: 'TIMEOUT' } }), 2000)
+      setTimeout(() => resolve({ data: null, error: { message: 'TIMEOUT' } }), 8000)
     );
     const { data, error } = await Promise.race([supaPromise, timeoutPromise]);
 
     if (!error && data?.session) {
-      // Supabase berhasil — hydrate profil dari DB
+      // Supabase auth berhasil — coba hydrate profil
+      console.log('[Supabase] Auth OK, session:', data.session.user.email);
       const ok = await hydrateUserFromSession(data.session);
       if (ok) {
+        console.log('[Supabase] Profile hydrated OK, supaAuthId:', currentUser.supaAuthId?.slice(0,8));
         logActivity('Login', currentUser.role + ' · ' + (activeBranch?.nama || '—') + ' · Supabase ✓');
+        showToast('success', 'Login berhasil', currentUser.name + ' · Online ☁');
         goToLauncher();
         if(btnEl){ btnEl.disabled=false; btnEl.textContent='Masuk ke Sistem'; }
         return;
       }
-      // Session ada tapi profile tidak ditemukan — lanjut ke fallback local
-      console.warn('Supabase session OK tapi get_my_profile gagal, fallback lokal');
+      // Session OK tapi get_my_profile gagal — set minimal supaAuthId agar checkout bisa ke Supabase
+      console.warn('[Supabase] get_my_profile gagal, set supaAuthId minimal dari session');
+      // Tetap lanjut ke fallback lokal untuk role/nama, tapi simpan supaAuthId
+      window._pendingSupaSession = data.session;
+    } else if (error && error.message !== 'TIMEOUT') {
+      console.warn('[Supabase] Auth error:', error.message);
+    } else if (error?.message === 'TIMEOUT') {
+      console.warn('[Supabase] Timeout — fallback ke local auth');
     }
 
     // Supabase error: credentials salah → langsung reject, jangan fallback lokal
@@ -4440,9 +4449,32 @@ async function doLogin(){
       initActiveBranch();
     }
 
+    // Jika ada pending Supabase session (auth OK tapi profile gagal) → set supaAuthId
+    if (window._pendingSupaSession) {
+      currentUser.supaAuthId = window._pendingSupaSession.user.id;
+      // Coba set supaId dari employees berdasarkan email
+      (async () => {
+        try {
+          const { data: emp } = await supa
+            .from('employees')
+            .select('id, branch_id')
+            .eq('auth_id', window._pendingSupaSession.user.id)
+            .single();
+          if (emp) {
+            currentUser.supaId = emp.id;
+            currentUser.branchUUID = emp.branch_id;
+            localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
+            console.log('[Supabase] supaId set from employees fallback:', emp.id?.slice(0,8));
+          }
+        } catch(e) { console.warn('[Supabase] employees fallback error:', e.message); }
+      })();
+      window._pendingSupaSession = null;
+      showToast('success', 'Login berhasil', currentUser.name + ' · Semi-online ☁');
+    } else {
+      showToast('info', 'Mode Offline', 'Data lokal — tidak terhubung ke server');
+    }
     localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
-    logActivity('Login', currentUser.role + ' · ' + (activeBranch?.nama || '—') + ' · offline');
-    showToast('info', 'Mode Offline', 'Terhubung ke data lokal');
+    logActivity('Login', currentUser.role + ' · ' + (activeBranch?.nama || '—') + (currentUser.supaAuthId ? ' · semi-online' : ' · offline'));
     goToLauncher();
   } catch(e) {
     console.error('Login error:', e);
@@ -7397,8 +7429,10 @@ async function confirmCheckout(){
   // ── SUPABASE: RPC atomic_checkout ────────────────────────────────────────
   let supaTransactionId = null;
   // ── SUPABASE Phase 2: atomic_checkout via RPC ───────────────────────────
-  // Aktif jika user punya Supabase auth session DAN shift sudah di-sync ke Supabase
   const hasSupaSession = !!(currentUser?.supaAuthId && activeShift?.supaId);
+  console.log('[Phase2] hasSupaSession:', hasSupaSession,
+    '| supaAuthId:', currentUser?.supaAuthId?.slice(0,8) || 'null',
+    '| shift.supaId:', activeShift?.supaId?.slice(0,8) || 'null');
   if(hasSupaSession) {
     try {
       // product_id harus UUID — lookup dari BOM_DATA atau skip jika tidak ada
@@ -11576,6 +11610,8 @@ function confirmOpenShift(){
   showToast('success', 'Shift dibuka', kasirName + ' · Modal Rp ' + opening.toLocaleString('id'));
 
   // ── SUPABASE: INSERT ke pos_shifts ────────────────────────────────────
+  console.log('[Phase2] Open shift — supaAuthId:', currentUser?.supaAuthId?.slice(0,8) || 'null',
+    '| branchUUID:', getBranchUUID().slice(0,8), '| staffUUID:', getStaffUUID()?.slice(0,8) || 'null');
   if (currentUser?.supaAuthId) {
     (async () => {
       try {
