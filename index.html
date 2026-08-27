@@ -2613,33 +2613,29 @@ async function hydrateUserFromSession(session) {
 </div>
 <!-- CRM -->
 <div class="module" id="module-crm">
-  <div class="page-header"><div class="page-header-left"><h2>CRM &amp; Loyalitas</h2><p>342 member terdaftar</p></div><button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Member</button></div>
-  <div class="member-profile">
-    <div class="member-avatar-lg">SA</div>
-    <div class="member-info">
-      <div class="member-name">Siti Aminah</div><div class="member-id">OKM-00892</div>
-      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><span class="tag tag-gold">Gold</span><span style="font-size:11px;color:var(--text3)">Bergabung Jan 2024</span></div>
-    </div>
-    <div style="display:flex;gap:20px;flex-wrap:wrap">
-      <div class="points-display"><div class="points-num">2.840</div><div class="points-label">Poin</div></div>
-      <div class="points-display" style="text-align:right"><div class="points-num">Rp 2,4jt</div><div class="points-label">Total Belanja</div></div>
-    </div>
+  <div class="page-header">
+    <div class="page-header-left"><h2>CRM &amp; Loyalitas</h2><p id="crm-member-count">— member terdaftar</p></div>
+    <button class="btn btn-primary btn-sm" onclick="openMemberModal()">+ Member</button>
   </div>
-  <div class="crm-grid">
-    <div class="table-wrap"><div class="table-header"><h3>Riwayat Transaksi</h3></div>
-      <table><thead><tr><th>Tanggal</th><th>Total</th><th>Poin</th><th>Bayar</th></tr></thead><tbody>
-        <tr><td style="color:var(--text3)">14 Agu</td><td style="color:var(--text)">Rp 84.000</td><td style="color:var(--green)">+84</td><td>QRIS</td></tr>
-        <tr><td style="color:var(--text3)">12 Agu</td><td style="color:var(--text)">Rp 56.000</td><td style="color:var(--green)">+56</td><td>Cash</td></tr>
-        <tr><td style="color:var(--text3)">7 Agu</td><td style="color:var(--text)">Rp 28.000</td><td style="color:var(--red)">-500</td><td>Redeem</td></tr>
-      </tbody></table>
+  <!-- KPI row -->
+  <div class="stat-row-lg" id="crm-kpi-row" style="margin-bottom:14px">
+    <div class="stat-card-lg"><div class="lbl">Total Member</div><div class="val" id="crm-kpi-total">0</div><div class="sub neu">Terdaftar</div></div>
+    <div class="stat-card-lg"><div class="lbl">Gold</div><div class="val" id="crm-kpi-gold" style="color:var(--amber)">0</div><div class="sub neu">≥ Rp 2jt</div></div>
+    <div class="stat-card-lg"><div class="lbl">Silver</div><div class="val" id="crm-kpi-silver" style="color:var(--text2)">0</div><div class="sub neu">≥ Rp 500rb</div></div>
+    <div class="stat-card-lg"><div class="lbl">Total Poin Aktif</div><div class="val" id="crm-kpi-points">0</div><div class="sub neu">Poin beredar</div></div>
+  </div>
+  <!-- Tabel member live -->
+  <div class="table-wrap">
+    <div class="table-header">
+      <h3>Daftar Member</h3>
+      <input type="text" id="crm-search-input" placeholder="Cari nama / HP / ID..." oninput="filterCRMTable()" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;width:200px">
     </div>
-    <div class="table-wrap"><div class="table-header"><h3>Top Member</h3></div>
-      <table><thead><tr><th>Member</th><th>Tier</th><th>Belanja</th></tr></thead><tbody>
-        <tr><td>Siti Aminah</td><td><span class="tag tag-gold">Gold</span></td><td style="color:var(--text)">Rp 420.000</td></tr>
-        <tr><td>Andika B.</td><td><span class="tag tag-gold">Gold</span></td><td style="color:var(--text)">Rp 315.000</td></tr>
-        <tr><td>Rina K.</td><td><span class="tag tag-silver">Silver</span></td><td style="color:var(--text)">Rp 248.000</td></tr>
-      </tbody></table>
-    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Nama</th><th>No. HP</th><th style="text-align:center">Poin</th><th>Tier</th><th>Total Belanja</th><th></th></tr></thead>
+      <tbody id="crm-table-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text3)">Memuat data member...</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 <!-- FINANCE -->
@@ -4749,7 +4745,6 @@ function showModule(mod){
     'finance':renderCashRecon,
     'hr':renderHRTable,
     'crm': async () => {
-      // Load fresh dari Supabase setiap kali modul CRM dibuka
       await loadCRMFromSupabase();
       renderCRMTable();
     },
@@ -8017,21 +8012,57 @@ function openMemberModal(){
     }
   );
 }
-function renderCRMTable(){
-  const tbody=document.querySelector('#module-crm .table-wrap tbody');
-  if(!tbody)return;
-  const tierColor={regular:'badge-gray',silver:'badge-gray',gold:'badge-amber'};
-  tbody.innerHTML=CRM_MEMBERS.map(m=>`<tr>
+function filterCRMTable(){
+  const q = (document.getElementById('crm-search-input')?.value||'').toLowerCase().trim();
+  renderCRMTable(q);
+}
+function renderCRMTable(filter=''){
+  const tbody = document.getElementById('crm-table-tbody');
+  const countEl = document.getElementById('crm-member-count');
+  if(!tbody) return;
+
+  // Update KPI
+  const total  = CRM_MEMBERS.length;
+  const gold   = CRM_MEMBERS.filter(m=>m.tier==='gold').length;
+  const silver = CRM_MEMBERS.filter(m=>m.tier==='silver').length;
+  const totalPts = CRM_MEMBERS.reduce((s,m)=>s+(m.points||0),0);
+  const el = id => document.getElementById(id);
+  if(el('crm-kpi-total'))  el('crm-kpi-total').textContent  = total;
+  if(el('crm-kpi-gold'))   el('crm-kpi-gold').textContent   = gold;
+  if(el('crm-kpi-silver')) el('crm-kpi-silver').textContent = silver;
+  if(el('crm-kpi-points')) el('crm-kpi-points').textContent = totalPts.toLocaleString('id');
+  if(countEl) countEl.textContent = total + ' member terdaftar';
+
+  // Filter
+  let members = CRM_MEMBERS;
+  if(filter) members = members.filter(m =>
+    m.name.toLowerCase().includes(filter) ||
+    m.phone.includes(filter) ||
+    m.id.toLowerCase().includes(filter)
+  );
+
+  if(!members.length){
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text3)">${filter ? 'Tidak ada member yang cocok dengan "'+filter+'"' : 'Belum ada member terdaftar'}</td></tr>`;
+    return;
+  }
+
+  const tierColor = {regular:'badge-gray', silver:'badge-gray', gold:'badge-amber'};
+  const tierLabel = {regular:'Regular', silver:'Silver', gold:'Gold'};
+  tbody.innerHTML = members.map(m => `<tr>
     <td style="font-family:monospace;font-size:11px;color:var(--text2)">${m.id}</td>
     <td style="font-weight:500">${m.name}</td>
     <td style="color:var(--text2)">${m.phone}</td>
-    <td>${m.points.toLocaleString('id')}</td>
-    <td><span class="badge ${tierColor[m.tier]||'badge-gray'}">${m.tier.toUpperCase()}</span></td>
-    <td>Rp ${m.totalSpend.toLocaleString('id')}</td>
+    <td style="text-align:center">
+      <span style="background:var(--green-dim);color:var(--green);font-weight:700;font-size:12px;padding:2px 8px;border-radius:12px">
+        ${(m.points||0).toLocaleString('id')} pts
+      </span>
+    </td>
+    <td><span class="badge ${tierColor[m.tier]||'badge-gray'}">${tierLabel[m.tier]||m.tier}</span></td>
+    <td>Rp ${(m.totalSpend||0).toLocaleString('id')}</td>
     <td><button class="btn btn-secondary btn-sm" onclick="openDetailMember('${m.id}')">Detail</button></td>
   </tr>`).join('');
-  const count=document.querySelector('#module-crm .page-header p');
-  if(count)count.textContent=CRM_MEMBERS.length+' member terdaftar';
+  const pageCountEl = document.querySelector('#module-crm .page-header p');
+  if(pageCountEl) pageCountEl.textContent = total + ' member terdaftar';
 }
 function openDetailMember(id){
   const m=CRM_MEMBERS.find(x=>x.id===id);if(!m)return;
