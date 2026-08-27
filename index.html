@@ -4060,7 +4060,7 @@ const STAFF_DB={
   'OKO-004':{name:'Putri Handayani',role:'Barista',init:'PH'},
   'OKO-005':{name:'Rizal Fauzi',role:'Manajer',init:'RF'},
 };
-let currentUser=ACCOUNTS['owner@okomural.com'],cart=[],numpadStr='',cartTotal=0,attLog=[],clockInterval=null;
+let currentUser=ACCOUNTS['owner@okomural.com'],cart=[],numpadStr='',cartTotal=0,_checkoutFinalTotal=0,attLog=[],clockInterval=null;
 // USER_DB: semua user yang bisa login — seed dari knownUsers
 let USER_DB = [
   // Owner — bisa switch semua cabang
@@ -7159,6 +7159,7 @@ function openCheckout(){
   const memberDisc = activeMember ? Math.floor(cartTotal * getTierDiscount(activeMember.tier)) : 0;
   const kuponDisc = (activeKupon && getKuponDiscountAmountForCart) ? getKuponDiscountAmountForCart() : 0;
   const finalTotal = Math.max(0, cartTotal - manualDisc - memberDisc - kuponDisc);
+  _checkoutFinalTotal = finalTotal; // simpan untuk numpad Pas & kembalian
   document.getElementById('receipt-items').innerHTML = cart.map(c =>
     '<div class="receipt-row"><span>' + c.name + (c.qty > 1 ? ' ×' + c.qty : '') + (c.note ? ' <span style="font-size:10px;color:var(--text3)">(' + c.note + ')</span>' : '') + '</span><span>Rp ' + (c.price * c.qty).toLocaleString('id') + '</span></div>'
   ).join('')
@@ -7723,8 +7724,8 @@ function closeCheckout(){document.getElementById('checkout-modal').classList.rem
 function numInput(v){numpadStr+=v;updateNumpad()}
 function numBackspace(){numpadStr=numpadStr.slice(0,-1);updateNumpad()}
 function setExact(v){numpadStr=String(v);updateNumpad()}
-function setExactTotal(){numpadStr=String(cartTotal);updateNumpad()}
-function updateNumpad(){const val=parseInt(numpadStr||'0');document.getElementById('numpad-val').textContent='Rp '+val.toLocaleString('id');const ch=val-cartTotal;document.getElementById('numpad-change').textContent=val>=cartTotal&&val>0?'Kembalian: Rp '+ch.toLocaleString('id'):''}
+function setExactTotal(){numpadStr=String(_checkoutFinalTotal||cartTotal);updateNumpad()}
+function updateNumpad(){const val=parseInt(numpadStr||'0');const due=_checkoutFinalTotal||cartTotal;document.getElementById('numpad-val').textContent='Rp '+val.toLocaleString('id');const ch=val-due;document.getElementById('numpad-change').textContent=val>=due&&val>0?'Kembalian: Rp '+ch.toLocaleString('id'):val>0&&val<due?'Kurang: Rp '+(due-val).toLocaleString('id'):''}
 function switchInvTab(el,tab){document.querySelectorAll('.inv-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.inv-panel').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('inv-'+tab).classList.add('active')}
 function renderMenuMgmt(){
   const el=document.getElementById('menu-mgmt-grid');if(!el)return;
