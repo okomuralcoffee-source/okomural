@@ -5274,6 +5274,15 @@ function getTxByPeriod(period){
   });
 }
 
+function toggleBranchTxDetail(cabId){
+  const detail = document.getElementById('branch-tx-detail-' + cabId);
+  const btn    = document.getElementById('btn-branch-detail-' + cabId);
+  if(!detail) return;
+  const isOpen = detail.style.display !== 'none';
+  detail.style.display = isOpen ? 'none' : 'block';
+  if(btn) btn.textContent = isOpen ? '📋 Detail Transaksi' : '▲ Sembunyikan';
+}
+
 function renderBranchReport(period){
   const container = document.getElementById('ld-branch-cards');
   const totalEl   = document.getElementById('ld-branch-total-content');
@@ -5301,9 +5310,39 @@ function renderBranchReport(period){
 
   // Render branch cards
   container.innerHTML = branchStats.map(b => {
-    const pct = totalRev > 0 ? ((b.rev/totalRev)*100).toFixed(1) : '0.0';
-    const icon = b.cab.type === 'cart' ? '🛒' : '🏠';
+    const pct    = totalRev > 0 ? ((b.rev/totalRev)*100).toFixed(1) : '0.0';
+    const icon   = b.cab.type === 'cart' ? '🛒' : '🏠';
     const margin = b.rev > 0 ? ((b.profit/b.rev)*100).toFixed(1) : '0.0';
+    const cabId  = b.cab.id;
+
+    // Detail transaksi rows
+    const txRows = b.txs.length === 0
+      ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:11px">Belum ada transaksi ${periodLabel.toLowerCase()}</div>`
+      : b.txs.slice().reverse().map((t,i) => {
+          const dt = new Date(t.createdAt||Date.now());
+          const timeStr = dt.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+          const itemStr = (t.items||[]).map(i=>i.name+(i.qty>1?` ×${i.qty}`:'')).join(', ');
+          const mIcon = t.method==='cash'?'💵':t.method==='qris'?'📱':'💳';
+          const typeTag = t.splitLabel
+            ? `<span style="font-size:9px;background:var(--amber-dim);color:var(--amber);border-radius:3px;padding:1px 4px">✂${t.splitLabel}</span>`
+            : t.isBulkCart
+            ? `<span style="font-size:9px;background:var(--blue-dim);color:var(--blue);border-radius:3px;padding:1px 4px">🛒Bulk</span>`
+            : '';
+          const voidTag = t.status==='void'
+            ? `<span style="font-size:9px;background:var(--red-dim);color:var(--red);border-radius:3px;padding:1px 4px">VOID</span>`
+            : '';
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">
+            <div style="font-size:10px;color:var(--text3);flex-shrink:0;width:34px">${timeStr}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${itemStr||'—'}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:1px">${t.kasir||'—'} ${typeTag}${voidTag}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:11px;font-weight:700;color:${t.status==='void'?'var(--red)':'var(--text)'}">${t.status==='void'?'—':'Rp '+fmt(t.total)}</div>
+              <div style="font-size:10px;color:var(--text3)">${mIcon} ${(t.method||'').toUpperCase()}</div>
+            </div>
+          </div>`;
+        }).join('');
 
     return `<div style="background:var(--bg1);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -5338,12 +5377,30 @@ function renderBranchReport(period){
           <div style="font-size:12px;font-weight:700;color:${parseFloat(margin)>=40?'var(--green)':'var(--amber)'}">${margin}%</div>
         </div>
       </div>
-      <!-- Payment breakdown -->
-      <div style="display:flex;gap:6px;font-size:11px">
-        ${b.cash>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💵 Cash: Rp ${fmt(b.cash)}</span>`:''}
-        ${b.qris>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">📱 QRIS: Rp ${fmt(b.qris)}</span>`:''}
-        ${b.card>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💳 Kartu: Rp ${fmt(b.card)}</span>`:''}
-        ${b.count===0?`<span style="color:var(--text3)">Belum ada transaksi ${periodLabel.toLowerCase()}</span>`:''}
+      <!-- Payment breakdown + toggle -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px">
+          ${b.cash>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💵 Cash: Rp ${fmt(b.cash)}</span>`:''}
+          ${b.qris>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">📱 QRIS: Rp ${fmt(b.qris)}</span>`:''}
+          ${b.card>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💳 Kartu: Rp ${fmt(b.card)}</span>`:''}
+          ${b.count===0?`<span style="color:var(--text3)">Belum ada transaksi ${periodLabel.toLowerCase()}</span>`:''}
+        </div>
+        <button onclick="toggleBranchTxDetail('${cabId}')"
+          id="btn-branch-detail-${cabId}"
+          style="padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">
+          📋 Detail Transaksi
+        </button>
+      </div>
+      <!-- Detail Transaksi — collapsible -->
+      <div id="branch-tx-detail-${cabId}" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-bottom:6px">
+          RIWAYAT TRANSAKSI ${b.cab.nama.toUpperCase()} — ${periodLabel.toUpperCase()}
+        </div>
+        ${txRows}
+        ${b.txs.length>0?`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;font-weight:700;margin-top:4px;border-top:2px solid var(--border)">
+          <span>${b.count} transaksi</span>
+          <span style="color:var(--green)">Rp ${fmt(b.rev)}</span>
+        </div>`:''}
       </div>
     </div>`;
   }).join('');
