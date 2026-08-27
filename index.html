@@ -1834,9 +1834,10 @@ async function hydrateUserFromSession(session) {
           <!-- Kupon input -->
           <button class="kupon-toggle-link" id="kupon-toggle-btn" onclick="toggleKuponInput()">🎟 Punya kode kupon?</button>
           <div class="kupon-input-row" id="kupon-input-row">
-            <input class="kupon-input" id="kupon-code-input" type="text" placeholder="KODE-KUPON" maxlength="20" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')applyKuponCode()">
+            <input class="kupon-input" id="kupon-code-input" type="text" placeholder="KODE-KUPON" maxlength="20" oninput="this.value=this.value.toUpperCase();clearKuponError()" onkeydown="if(event.key==='Enter')applyKuponCode()">
             <button class="btn btn-secondary btn-sm" onclick="applyKuponCode()">Pakai</button>
           </div>
+          <div id="kupon-error-msg" style="display:none;font-size:11px;color:var(--red);margin:3px 0 4px;padding:4px 8px;background:var(--red-dim);border-radius:4px"></div>
           <div class="kupon-applied-badge" id="kupon-applied-badge">
             <span id="kupon-applied-label">🎟 KODE</span>
             <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0" onclick="removeKupon()">×</button>
@@ -1891,9 +1892,10 @@ async function hydrateUserFromSession(session) {
         </div>
         <button class="kupon-toggle-link" id="kupon-toggle-btn-mob" onclick="toggleKuponInput()">🎟 Punya kode kupon?</button>
         <div class="kupon-input-row" id="kupon-input-row-mob">
-          <input class="kupon-input" id="kupon-code-input-mob" type="text" placeholder="KODE-KUPON" maxlength="20" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')applyKuponCode()">
+          <input class="kupon-input" id="kupon-code-input-mob" type="text" placeholder="KODE-KUPON" maxlength="20" oninput="this.value=this.value.toUpperCase();clearKuponError()" onkeydown="if(event.key==='Enter')applyKuponCode()">
           <button class="btn btn-secondary btn-sm" onclick="applyKuponCode()">Pakai</button>
         </div>
+        <div id="kupon-error-msg-mob" style="display:none;font-size:11px;color:var(--red);margin:3px 0 4px;padding:4px 8px;background:var(--red-dim);border-radius:4px"></div>
         <div class="kupon-applied-badge" id="kupon-applied-badge-mob">
           <span id="kupon-applied-label-mob">🎟 KODE</span>
           <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0" onclick="removeKupon()">×</button>
@@ -7228,12 +7230,32 @@ function toggleKuponInput(){
     if(inp && document.getElementById('kupon-input-row')?.classList.contains('open')) inp.focus();
   }, 80);
 }
+function clearKuponError(){
+  ['kupon-error-msg','kupon-error-msg-mob'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el){ el.style.display='none'; el.textContent=''; }
+  });
+}
+function showKuponError(msg){
+  clearKuponError();
+  ['kupon-error-msg','kupon-error-msg-mob'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el){ el.textContent = '⚠ ' + msg; el.style.display='block'; }
+  });
+  // Juga toast untuk visibilitas
+  showToast('error','Kupon tidak dapat dipakai', msg);
+}
 function applyKuponCode(){
-  const code = (document.getElementById('kupon-code-input')?.value || document.getElementById('kupon-code-input-mob')?.value || '').trim().toUpperCase();
-  if(!code){ showToast('warning','Kode kosong','Masukkan kode kupon dulu.'); return; }
+  clearKuponError();
+  // Ambil nilai dari input yang visible/terisi
+  const inp1 = document.getElementById('kupon-code-input');
+  const inp2 = document.getElementById('kupon-code-input-mob');
+  const code = (inp1?.value || inp2?.value || '').trim().toUpperCase();
+  if(!code){ showKuponError('Masukkan kode kupon dulu'); return; }
   const result = validateKupon(code, cartTotal);
-  if(!result.ok){ showToast('error','Kupon tidak valid', result.msg); return; }
+  if(!result.ok){ showKuponError(result.msg); return; }
   activeKupon = result.kupon;
+  clearKuponError();
   // Close input rows
   ['kupon-input-row','kupon-input-row-mob'].forEach(id => {
     const el = document.getElementById(id);
@@ -7256,6 +7278,7 @@ function applyKuponCode(){
 }
 function removeKupon(){
   activeKupon = null;
+  clearKuponError();
   ['kupon-applied-badge','kupon-applied-badge-mob'].forEach(id => {
     const el = document.getElementById(id); if(el) el.classList.remove('show');
   });
