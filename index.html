@@ -6735,57 +6735,69 @@ function printReceipt(){
 function buildPrintFrame(tx){
   const frame = document.getElementById('print-receipt-frame');
   if(!frame) return;
-  const cfg = STRUK_CONFIG || {};
-  const now = new Date(tx.createdAt);
-  const dateStr = now.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year:'numeric'});
-  const timeStr = now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
-  const fmt = n => 'Rp ' + Math.abs(n).toLocaleString('id');
-  const cabang = activeBranch?.nama || cfg.storeName || 'OKOMURAL';
-  const paperW = cfg.paperWidth || '80mm';
-  // Inject @page dengan lebar kertas yang benar
+  // ── Baca dari STRUK (Settings → Branding) + BRAND + STRUK_CONFIG (paperWidth) ──
+  const paperW = STRUK_CONFIG?.paperWidth || '80mm';
   let styleTag = document.getElementById('print-page-style');
   if(!styleTag){ styleTag = document.createElement('style'); styleTag.id='print-page-style'; document.head.appendChild(styleTag); }
   styleTag.textContent = `@media print { @page { size: ${paperW} auto; margin: 3mm 3mm 8mm 3mm; } }`;
+  const brandName = (BRAND?.name || 'OKOMURAL').toUpperCase();
+  const cabangNama = activeBranch?.nama || 'HQ Indrapura';
+  const now = new Date(tx.createdAt || Date.now());
+  const dateStr = now.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year:'numeric'});
+  const timeStr = now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+  const fmt = n => 'Rp ' + Math.abs(n).toLocaleString('id');
   let html = '';
-  html += '<div class="pr-center pr-large">' + (cfg.storeName||'OKOMURAL').toUpperCase() + '</div>';
-  html += '<div class="pr-center pr-small">' + cabang + (cfg.address ? ' · ' + cfg.address : '') + '</div>';
-  html += '<div class="pr-center pr-small">Telp: ' + (cfg.phone||'-') + '</div>';
+  // ── HEADER ──
+  if(BRAND?.logoBase64){
+    html += '<div class="pr-center" style="margin-bottom:4px"><img src="' + BRAND.logoBase64 + '" style="height:40px;object-fit:contain"></div>';
+  }
+  html += '<div class="pr-center pr-large">' + brandName + '</div>';
+  html += '<div class="pr-center pr-small">' + cabangNama + '</div>';
+  if(STRUK?.alamat)    html += '<div class="pr-center pr-small">' + STRUK.alamat + '</div>';
+  if(STRUK?.telepon)   html += '<div class="pr-center pr-small">☎ ' + STRUK.telepon + '</div>';
+  if(STRUK?.instagram) html += '<div class="pr-center pr-small">📸 ' + STRUK.instagram + '</div>';
+  if(STRUK?.wifi)      html += '<div class="pr-center pr-small">📶 WiFi: ' + STRUK.wifi + '</div>';
   html += '<hr class="pr-divider">';
-  html += '<div class="pr-small">Tanggal : ' + dateStr + ' ' + timeStr + '</div>';
-  html += '<div class="pr-small">Kasir   : ' + tx.kasir + '</div>';
-  html += '<div class="pr-small">No. Trx : ' + tx.id + '</div>';
-  if(tx.table) html += '<div class="pr-small">Meja    : ' + tx.table + '</div>';
+  // ── INFO TRANSAKSI ──
+  html += '<div class="pr-row pr-small"><span>Waktu</span><span>' + dateStr + ' ' + timeStr + '</span></div>';
+  if(STRUK?.showKasir !== false) html += '<div class="pr-row pr-small"><span>Kasir</span><span>' + (tx.kasir||'—') + '</span></div>';
+  if(STRUK?.showTxId  !== false) html += '<div class="pr-row pr-small"><span>No. Trx</span><span>' + tx.id + '</span></div>';
+  if(STRUK?.showMeja  !== false && tx.table) html += '<div class="pr-row pr-small"><span>Meja</span><span>' + tx.table + '</span></div>';
   html += '<hr class="pr-divider">';
+  // ── ITEMS ──
   tx.items.forEach(item => {
     if(item.voided) return;
     const sub = item.price * item.qty;
-    html += '<div class="pr-row"><span>' + item.name + (item.qty > 1 ? ' x' + item.qty : '') + '</span><span>' + fmt(sub) + '</span></div>';
+    html += '<div class="pr-row"><span>' + item.name + (item.qty > 1 ? ' ×' + item.qty : '') + '</span><span>' + fmt(sub) + '</span></div>';
     if(item.qty > 1) html += '<div class="pr-row-indent"><span>@ ' + fmt(item.price) + '</span><span></span></div>';
-    if(item.note) html += '<div class="pr-row-indent"><span>* ' + item.note + '</span><span></span></div>';
+    if(item.note)    html += '<div class="pr-row-indent"><span>* ' + item.note + '</span><span></span></div>';
   });
   html += '<hr class="pr-divider">';
+  // ── TOTAL & DISKON ──
   const bd = tx.discountBreakdown || {};
-  if(tx.discount > 0){
-    html += '<div class="pr-row"><span>Subtotal</span><span>' + fmt(tx.subtotal) + '</span></div>';
-    if(bd.manual > 0) html += '<div class="pr-row"><span>Diskon Manual</span><span>-' + fmt(bd.manual) + '</span></div>';
-    if(bd.member > 0) html += '<div class="pr-row"><span>Diskon Member</span><span>-' + fmt(bd.member) + '</span></div>';
-    if(bd.kupon > 0 && tx.kuponCode) html += '<div class="pr-row"><span>Kupon ' + tx.kuponCode + '</span><span>-' + fmt(bd.kupon) + '</span></div>';
+  if((tx.discount||0) > 0){
+    html += '<div class="pr-row pr-small"><span>Subtotal</span><span>' + fmt(tx.subtotal) + '</span></div>';
+    if((bd.manual||0) > 0) html += '<div class="pr-row pr-small"><span>Diskon Manual</span><span>-' + fmt(bd.manual) + '</span></div>';
+    if((bd.member||0) > 0) html += '<div class="pr-row pr-small"><span>Diskon Member</span><span>-' + fmt(bd.member) + '</span></div>';
+    if((bd.kupon||0)  > 0 && tx.kuponCode) html += '<div class="pr-row pr-small"><span>Kupon ' + tx.kuponCode + '</span><span>-' + fmt(bd.kupon) + '</span></div>';
   }
   html += '<div class="pr-total-row"><span>TOTAL</span><span>' + fmt(tx.total) + '</span></div>';
-  html += '<div class="pr-row pr-small" style="margin-top:3px"><span>Metode Bayar</span><span>' + tx.method.toUpperCase() + '</span></div>';
+  const methodLabel = tx.method === 'cash' ? 'Tunai' : tx.method === 'qris' ? 'QRIS' : 'Kartu';
+  html += '<div class="pr-row pr-small" style="margin-top:3px"><span>Metode Bayar</span><span>' + methodLabel + '</span></div>';
+  // ── MEMBER INFO ──
   if(tx.memberId){
-    const m = (typeof CRM_MEMBERS !== 'undefined') ? CRM_MEMBERS.find(x => x.id === tx.memberId) : null;
+    const m = CRM_MEMBERS?.find(x => x.id === tx.memberId);
     if(m){
-      html += '<div class="pr-member-box">👤 ' + m.name + ' · ' + m.tier.toUpperCase() + '<br>Poin: ' + m.points.toLocaleString('id') + ' poin</div>';
+      const earned = Math.floor((tx.total / (LOYALTY_CONFIG?.pointsPerIdr || 1000)));
+      html += '<hr class="pr-divider">';
+      html += '<div class="pr-member-box">👤 ' + m.name + ' · ' + (m.tier||'regular').toUpperCase() + '<br>Poin: ' + (m.points||0).toLocaleString('id') + ' (+' + earned + ')</div>';
     }
   }
+  // ── FOOTER ──
   html += '<hr class="pr-divider">';
-  const footerText = cfg.footer || 'Terima kasih atas kunjungan Anda!';
-  html += '<div class="pr-center pr-small" style="line-height:2">' + footerText + '</div>';
-  if(cfg.showPoints && tx.memberId){
-    // Poin sudah ditampilkan di section member di atas
-  }
-  html += '<div class="pr-center pr-small" style="margin-top:6px;letter-spacing:.1em">* * *</div>';
+  if(STRUK?.footer) html += '<div class="pr-center pr-small" style="line-height:1.9">' + STRUK.footer + '</div>';
+  if(STRUK?.tnc)    html += '<div class="pr-center pr-small" style="margin-top:3px;font-style:italic">' + STRUK.tnc + '</div>';
+  html += '<div class="pr-center pr-small" style="margin-top:6px;letter-spacing:.15em">* * *</div>';
   frame.innerHTML = html;
 }
 /* ── Print struk (dipanggil dari tombol atau auto setelah checkout) ── */
@@ -10171,25 +10183,26 @@ function refreshStrukPreview(){
   wrap.innerHTML = buildStrukPreviewHTML(true);
 }
 function printTestStruk(){
-  // Save current settings first
   saveStrukConfig();
-  const frame = document.getElementById('slip-gaji-frame');
-  if(!frame) return;
-  frame.innerHTML = `
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Courier New',monospace;font-size:11px;line-height:1.7;color:#000;background:#fff;padding:20px}
-      .s-center{text-align:center}
-      .s-divider{border-top:1px dashed #aaa;margin:6px 0}
-      .s-solid{border-top:2px solid #000;margin:6px 0}
-      .s-row{display:flex;justify-content:space-between}
-      .s-small{font-size:10px;color:#555}
-      @page{size:80mm auto;margin:0}
-    </style>
-    ${buildStrukPreviewHTML(true)}
-  `;
-  window.print();
-  setTimeout(() => { frame.innerHTML = ''; }, 1000);
+  // Buat dummy tx yang merepresentasikan struk nyata
+  const dummyTx = {
+    id: 'TRX-TEST-001',
+    kasir: currentUser?.name || 'AdminOKO',
+    createdAt: new Date().toISOString(),
+    table: null,
+    method: 'cash',
+    items: [
+      {name: 'Es Kopi Susu', qty: 1, price: 28000, note: ''},
+      {name: 'Cappuccino', qty: 2, price: 26000, note: 'Less sugar'},
+    ],
+    subtotal: 80000,
+    discount: 4000,
+    discountBreakdown: {manual: 0, member: 4000, kupon: 0},
+    total: 76000,
+    memberId: CRM_MEMBERS?.[0]?.id || null,
+    kuponCode: null,
+  };
+  doPrintStruk(dummyTx);
   showToast('info','Print test dikirim','Cek printer atau dialog print browser');
 }
 /* ── Patch updateBrandingPanel to also load struk config ── */
