@@ -2302,7 +2302,7 @@ async function hydrateUserFromSession(session) {
           <svg class="nav-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="nav-group-body open">
-          <div class="nav-item" onclick="showModule('inventory');closeSidebar()" id="nav-inventory">Inventory Control <span class="nav-badge">3</span></div>
+          <div class="nav-item" onclick="showModule('inventory');closeSidebar()" id="nav-inventory">Inventory Control <span class="nav-badge" id="inv-nav-badge" style="display:none">0</span></div>
           <div class="nav-item" onclick="showModule('purchase-orders');closeSidebar()" id="nav-purchase-orders" data-roles="Owner,Manajer">Purchase Orders</div>
           <div class="nav-item" onclick="showModule('pricelist');closeSidebar()" id="nav-pricelist" data-roles="Owner,Manajer">Material Pricelist Reference</div>
         </div>
@@ -6680,12 +6680,15 @@ function showReceipt(tx){
       + '<span>Rp ' + sub + '</span></div>' + noteHtml;
   });
   body += '<div style="border-top:1px dashed var(--border2);margin:8px 0"></div>';
-  if(tx.discount){
+  const bd2 = tx.discountBreakdown || {};
+  if(tx.discount > 0){
     body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)"><span>Subtotal</span><span>Rp ' + tx.subtotal.toLocaleString('id') + '</span></div>';
-    body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--green)"><span>Diskon' + (tx.discountLabel ? ' (' + tx.discountLabel + ')' : '') + '</span><span>- Rp ' + tx.discount.toLocaleString('id') + '</span></div>';
+    if((bd2.manual||0) > 0) body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--green)"><span>Diskon Manual</span><span>- Rp ' + (bd2.manual).toLocaleString('id') + '</span></div>';
+    if((bd2.member||0) > 0) body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--green)"><span>Diskon Member</span><span>- Rp ' + (bd2.member).toLocaleString('id') + '</span></div>';
+    if((bd2.kupon||0) > 0 && tx.kuponCode) body += '<div style="display:flex;justify-content:space-between;font-size:11px;background:var(--green-dim);padding:3px 6px;border-radius:3px;margin:2px 0"><span>🏷 Kupon <strong>' + tx.kuponCode + '</strong></span><span style="color:var(--green);font-weight:700">- Rp ' + (bd2.kupon).toLocaleString('id') + '</span></div>';
   }
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-top:4px"><span>TOTAL</span><span>Rp ' + tx.total.toLocaleString('id') + '</span></div>';
-  body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:3px"><span>Bayar via</span><span>' + tx.method.toUpperCase() + '</span></div>';
+  body += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:3px"><span>Bayar via</span><span>' + (tx.method||'').toUpperCase() + '</span></div>';
   if(tx.memberId){
     const m = CRM_MEMBERS.find(x => x.id === tx.memberId);
     if(m) body += '<div style="margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:4px;font-size:10px;color:var(--text2);text-align:center">👤 ' + m.name + ' · ' + m.tier.toUpperCase() + ' · ' + m.points.toLocaleString('id') + ' poin</div>';
@@ -6947,6 +6950,12 @@ async function checkStockAlerts(){
   const count = document.getElementById('stock-alert-count');
   if(bell)  bell.style.display = total > 0 ? 'flex' : 'none';
   if(count) count.textContent  = total;
+  // Juga update nav-badge di sidebar
+  const navBadge = document.getElementById('inv-nav-badge');
+  if(navBadge){
+    if(total > 0){ navBadge.textContent = total; navBadge.style.display = 'inline-flex'; }
+    else { navBadge.style.display = 'none'; }
+  }
   if(total > _prevAlertCount && bell){
     bell.classList.remove('new-alert');
     void bell.offsetWidth;
@@ -7801,7 +7810,7 @@ function openEditStok(name,qty,unit,min){
       inv.unit=document.getElementById('es-unit').value||unit;
       inv.min=parseFloat(document.getElementById('es-min').value)||0;
       inv.status=inv.qty<=0?'critical':inv.qty<=inv.min?'warning':'safe';
-      renderInventory();
+      renderInventory(); // sudah include checkStockAlerts() di akhir
       showToast('success','Stok '+name+' diperbarui','Stok: '+inv.qty+' '+inv.unit);
     }
   );
@@ -8807,12 +8816,13 @@ function submitRestock(){
 let _qrisPendingConfirm = false;
 let _qrisSplitPerson = null; // null = normal checkout, 1|2 = split bill orang ke-n
 function selPMQRIS(el){
-  // Select QRIS as payment method first
   selPM(el);
-  // Get current total from checkout modal
-  const totalEl = document.getElementById('receipt-total-val');
-  const totalText = totalEl ? totalEl.textContent : 'Rp 0';
-  openQRIS(totalText);
+  // Hitung total dari cart (lebih reliable dari DOM)
+  const manualDisc = (typeof getManualDiscountAmount === 'function') ? getManualDiscountAmount() : 0;
+  const memberDisc = activeMember ? Math.floor(cartTotal * getTierDiscount(activeMember.tier)) : 0;
+  const kuponDisc  = (activeKupon && typeof getKuponDiscountAmountForCart === 'function') ? getKuponDiscountAmountForCart() : 0;
+  const finalTotal = Math.max(0, cartTotal - manualDisc - memberDisc - kuponDisc);
+  openQRIS('Rp ' + finalTotal.toLocaleString('id'));
 }
 function openQRIS(amountText){
   _qrisPendingConfirm = false;
