@@ -1846,6 +1846,16 @@ async function hydrateUserFromSession(session) {
     <div class="split-body">
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Klik nama item untuk assign ke Orang 1 atau Orang 2. Item yang belum di-assign masuk ke Orang 1.</div>
       <div id="split-items-list"></div>
+      <!-- Metode Bayar untuk Split -->
+      <div style="margin:12px 0 4px;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px">METODE BAYAR</div>
+      <div style="display:flex;gap:6px;margin-bottom:4px">
+        <button id="spb-cash" onclick="selectSplitPay(this,'cash')"
+          style="flex:1;padding:7px;border-radius:6px;border:1px solid var(--green);background:var(--green-dim);color:var(--green);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">💵 Cash</button>
+        <button id="spb-qris" onclick="selectSplitPay(this,'qris')"
+          style="flex:1;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">📱 QRIS</button>
+        <button id="spb-card" onclick="selectSplitPay(this,'card')"
+          style="flex:1;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">💳 Kartu</button>
+      </div>
       <div class="split-summary">
         <div class="split-summary-card">
           <div class="split-summary-label" style="color:var(--blue)">Orang 1</div>
@@ -4166,9 +4176,25 @@ function rebuildFinanceFromSession(){
 
   try { localStorage.setItem('okomural_source_bd', JSON.stringify(SESSION.sourceBreakdown)); } catch(e){}
 
-  const finMod = document.getElementById('module-live-dashboard');
-  if(finMod && finMod.classList.contains('active')){
+  // Auto-refresh modul yang sedang aktif
+  const isModActive = id => {
+    const el = document.getElementById('module-' + id);
+    return el && el.classList.contains('active');
+  };
+  if(isModActive('live-dashboard')){
     if(typeof renderLiveDashboard === 'function') renderLiveDashboard();
+  }
+  if(isModActive('finance')){
+    if(typeof renderCashRecon === 'function') renderCashRecon();
+  }
+  if(isModActive('sales-tracking')){
+    if(typeof renderSalesTracking === 'function') renderSalesTracking();
+  }
+  // Per-cabang panel: cek apakah tab branch aktif
+  const branchPanel = document.getElementById('ld-panel-branch');
+  if(isModActive('live-dashboard') && branchPanel && branchPanel.style.display !== 'none'){
+    const period = typeof _branchPeriod !== 'undefined' ? _branchPeriod : 'hari';
+    if(typeof renderBranchReport === 'function') renderBranchReport(period);
   }
   syncShiftSidebar();
 }
@@ -6500,10 +6526,30 @@ function buildPrintFrame(tx){
    FITUR 2: SPLIT BILL
 ══════════════════════════════════════════════════ */
 let splitAssign = {}; // { cartIndex: 1 | 2 }
+let _splitPayMethod = 'cash'; // metode bayar split bill, default cash
+
+function selectSplitPay(btn, method){
+  _splitPayMethod = method;
+  const btns = document.querySelectorAll('#spb-cash,#spb-qris,#spb-card');
+  btns.forEach(b => {
+    b.style.borderColor = 'var(--border)';
+    b.style.background  = 'var(--bg2)';
+    b.style.color       = 'var(--text2)';
+  });
+  btn.style.borderColor = 'var(--green)';
+  btn.style.background  = 'var(--green-dim)';
+  btn.style.color       = 'var(--green)';
+}
 function openSplitBill(){
   if(cart.length < 2){ showToast('warning','Minimal 2 item','Split bill butuh minimal 2 item berbeda.'); return; }
   splitAssign = {};
   cart.forEach((_,i) => { splitAssign[i] = 1; }); // default semua ke orang 1
+  // Reset metode bayar ke cash
+  _splitPayMethod = 'cash';
+  setTimeout(() => {
+    const cashBtn = document.getElementById('spb-cash');
+    if(cashBtn) selectSplitPay(cashBtn, 'cash');
+  }, 50);
   renderSplitItems();
   document.getElementById('split-overlay').classList.add('open');
 }
@@ -6553,14 +6599,15 @@ function executeSplitCheckout(person){
   }
 
   const total = items.reduce((s,c) => s + c.price * c.qty, 0);
-  const method = (document.querySelector('.pm-btn.active')?.textContent || 'Cash').toLowerCase();
+  // Gunakan _splitPayMethod dari payment selector di split overlay
+  const method = _splitPayMethod || 'cash';
   const hpp = items.reduce((s,c) => s + (calcHPP(c.id) || 0) * c.qty, 0);
   const tx = {
     id: 'TRX-' + Date.now() + '-P' + person,
     kasir: currentUser.name,
     items: items.map(c => ({id:c.id, name:c.name, qty:c.qty, price:c.price, note:c.note||'', custom:c.custom||false})),
     subtotal: total, discount: 0, total, hpp,
-    method: method === 'qris' ? 'qris' : method === 'kartu' ? 'card' : 'cash',
+    method: method, // sudah format benar: 'cash'|'qris'|'card' dari _splitPayMethod
     memberId: null, createdAt: new Date().toISOString(), status: 'paid',
     source: activeBranch?.id || 'CAB-001',
     sourceName: activeBranch?.nama || 'HQ Indrapura',
@@ -9849,18 +9896,20 @@ function getSalesFiltered(){
       }
     });
   }
-  // Filter by date
+  // Filter by date — gunakan local date untuk timezone-safe comparison
   if(fromVal){
     txList = txList.filter(t => {
       const d = new Date(t.createdAt || t.time || Date.now());
-      return d >= new Date(fromVal);
+      // Bandingkan tanggal lokal (bukan UTC) agar WIB/timezone lain benar
+      const dLocal = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      return dLocal >= fromVal;
     });
   }
   if(toVal){
     txList = txList.filter(t => {
       const d = new Date(t.createdAt || t.time || Date.now());
-      const toDate = new Date(toVal); toDate.setHours(23,59,59,999);
-      return d <= toDate;
+      const dLocal = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      return dLocal <= toVal;
     });
   }
   // Filter by method
