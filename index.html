@@ -1403,6 +1403,19 @@ const BRANCH_LOCAL_TO_UUID = {
   'CAB-002': '11111111-0000-0000-0000-000000000002',
   'CAB-003': '11111111-0000-0000-0000-000000000003',
 };
+
+// Map local MENU.id (integer) → Supabase products.id (UUID)
+// Pattern: 55555555-0000-0000-0000-00000000000X
+// Es Kopi Susu=1, Americano=2, Cappuccino=3, Cold Brew=4, Latte=5,
+// Matcha Latte=6, Teh Tarik=7, Cokelat Panas=8, Croissant=9,
+// Banana Bread=10, Avocado Toast=11, Cheesecake=12
+const PRODUCT_UUID_MAP = {};
+for (let i = 1; i <= 20; i++) {
+  PRODUCT_UUID_MAP[i] = `55555555-0000-0000-0000-${String(i).padStart(12,'0')}`;
+}
+function getProductUUID(localId) {
+  return PRODUCT_UUID_MAP[localId] || null;
+}
 // Helper: dapatkan branch UUID dari activeBranch atau currentUser
 function getBranchUUID() {
   if (currentUser?.branchUUID) return currentUser.branchUUID;
@@ -7389,12 +7402,14 @@ async function confirmCheckout(){
   if(hasSupaSession) {
     try {
       // product_id harus UUID — lookup dari BOM_DATA atau skip jika tidak ada
+      // Map local product id → Supabase UUID (null untuk custom items)
       const rpcItems = cart.map(c => ({
-        product_id:   null,          // Phase 4 (menu sync) akan isi UUID — null OK karena RPC cast ke UUID gracefully
-        product_name: c.name,
-        quantity:     c.qty,
-        unit_price:   c.price,
-        hpp_per_unit: calcHPP(c.id) || 0
+        product_id:      c.custom ? null : getProductUUID(c.id),
+        local_product_id: c.id || null,
+        product_name:    c.name,
+        quantity:        c.qty,
+        unit_price:      c.price,
+        hpp_per_unit:    calcHPP(c.id) || 0
       }));
       const { data: saleId, error } = await supa.rpc('atomic_checkout', {
         p_branch_id:      getBranchUUID(),
