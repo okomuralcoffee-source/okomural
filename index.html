@@ -4512,13 +4512,14 @@ async function doLogin(){
     if(btnEl){ btnEl.disabled=false; btnEl.textContent='Masuk ke Sistem'; }
   }
 }
-function doMemberLookup(suffix=''){
+async function doMemberLookup(suffix=''){
   const inputId = suffix ? 'crm-lookup-input-'+suffix : 'crm-lookup-input';
   const input = document.getElementById(inputId);
   if(!input) return;
   const query = input.value.trim();
   if(!query){ showToast('warning','Input kosong','Masukkan nomor HP atau Member ID'); return; }
-  const member = lookupMember(query);
+  // Coba local dulu, fallback ke Supabase
+  const member = await lookupMemberAsync(query);
   if(!member){
     showToast('error','Member tidak ditemukan', `"${query}" tidak terdaftar`);
     return;
@@ -4747,7 +4748,11 @@ function showModule(mod){
     'attendance':renderCalendar,
     'finance':renderCashRecon,
     'hr':renderHRTable,
-    'crm':renderCRMTable,
+    'crm': async () => {
+      // Load fresh dari Supabase setiap kali modul CRM dibuka
+      await loadCRMFromSupabase();
+      renderCRMTable();
+    },
     // 'purchase-orders' → handled by Override 2 (renderPOList)
     // 'sales-tracking'  → handled by Override 2 (setSalesDateRange → renderSalesTracking)
     'settings':()=>{
@@ -4896,7 +4901,26 @@ function calcCartHPP(cartItems){
 ══════════════════════════════════════════════════ */
 function lookupMember(query){
   query = query.trim();
-  return CRM_MEMBERS.find(m => m.phone===query || m.id===query || m.name.toLowerCase()===query.toLowerCase()) || null;
+  // Cari local dulu (sudah sync dari Supabase saat module dibuka)
+  return CRM_MEMBERS.find(m =>
+    m.phone === query ||
+    m.id === query ||
+    m.id.toLowerCase() === query.toLowerCase() ||
+    m.name.toLowerCase() === query.toLowerCase()
+  ) || null;
+}
+// Lookup dengan Supabase fallback — async version untuk POS lookup
+async function lookupMemberAsync(query){
+  const local = lookupMember(query);
+  if(local) return local;
+  // Tidak ada di local — coba Supabase
+  const fromSupa = await lookupMemberFromSupabase(query);
+  if(fromSupa){
+    // Cache ke local
+    CRM_MEMBERS.push(fromSupa);
+    saveCRM();
+  }
+  return fromSupa;
 }
 function applyMemberToCart(member){
   activeMember = member;
@@ -6254,7 +6278,8 @@ function renderCashRecon(){
 let crmScreenTab = 'semua';
 function goToCRM(){
   showScreen('crm');
-  renderCRMScreen();
+  // Load fresh dari Supabase lalu render
+  loadCRMFromSupabase().then(() => renderCRMScreen());
 }
 function switchCRMTab(tab){
   crmScreenTab = tab;
@@ -6360,16 +6385,25 @@ function closeCRMDetail(){
 function saveCRMDetailFromScreen(id){
   const m = CRM_MEMBERS.find(x => x.id === id);
   if(!m) return;
-  m.points = parseInt(document.getElementById('csd-points').value) || 0;
-  m.totalSpend = parseInt(document.getElementById('csd-spend').value) || 0;
-  m.phone = document.getElementById('csd-hp').value;
-  m.email = document.getElementById('csd-email').value;
-  m.tier = getTier(m.totalSpend);
-  saveCRM(); // persist perubahan manual ke localStorage
+  m.points    = parseInt(document.getElementById('csd-points').value) || 0;
+  m.totalSpend= parseInt(document.getElementById('csd-spend').value) || 0;
+  m.phone     = document.getElementById('csd-hp').value;
+  m.email     = document.getElementById('csd-email').value;
+  m.tier      = getTier(m.totalSpend);
+  saveCRM();
   closeCRMDetail();
   renderCRMScreen();
-  renderCRMTable(); // sync dengan modul CRM di Bisnis
+  renderCRMTable();
   showToast('success', 'Data ' + m.name + ' diperbarui');
+  logActivity('CRM', 'Edit member: ' + m.name + ' · poin=' + m.points);
+  // ── SUPABASE Phase 6: update crm_members ─────────────────────────────
+  updateMemberInSupabase(m.id, {
+    loyalty_points: m.points,
+    total_spend:    m.totalSpend,
+    tier:           m.tier,
+    phone:          m.phone,
+    email:          m.email || null,
+  });
 }
 function openCRMRegisterPanel(){
   const panel = document.getElementById('crm-register-panel');
@@ -6397,16 +6431,20 @@ function submitCRMRegister(){
     return;
   }
   const newId = 'OKM-' + String(CRM_MEMBERS.length + 10001).padStart(5,'0');
-  CRM_MEMBERS.push({
+  const newMember = {
     id: newId, name: nama, phone: hp, email: email,
     points: 0, tier: 'regular', totalSpend: 0,
     joinedAt: new Date().toISOString().slice(0,10)
-  });
+  };
+  CRM_MEMBERS.push(newMember);
   saveCRM();
   closeCRMRegisterPanel();
   renderCRMScreen();
-  renderCRMTable(); // sync dengan modul CRM di Bisnis
+  renderCRMTable();
   showToast('success', 'Member terdaftar!', 'ID: ' + newId + ' · ' + nama);
+  logActivity('CRM', 'Member baru: ' + nama + ' · ' + hp);
+  // ── SUPABASE Phase 6: register_member RPC ─────────────────────────────
+  saveMemberToSupabase(newMember);
 }
 /* ══════════════════════════════════════════════════
    OPEN BILL — Dine-In Outstanding Table
@@ -7538,18 +7576,26 @@ async function confirmCheckout(){
     const k = KUPON_DB.find(x => x.id === activeKupon.id);
     if(k){ k.usedCount++; if(k.maxUse > 0 && k.usedCount >= k.maxUse) k.active = false; }
   }
-  // CRM: earn points (local — Supabase sudah handle via RPC jika online)
+  // CRM: earn points
+  // - hasSupaSession: atomic_checkout RPC sudah handle points di Supabase
+  //   → update local CRM_MEMBERS agar UI langsung reflect
+  // - offline: earnPoints() update local saja
   let pointMsg = '';
-  if(activeMember && !hasSupaSession){
+  if(activeMember){
     const oldTier = activeMember.tier;
-    const earned = earnPoints(activeMember, finalTotal);
-    saveCRM(); // persist poin + totalSpend + tier ke localStorage
+    const earned  = earnPoints(activeMember, finalTotal); // update local selalu
     pointMsg = ' · +' + earned + ' poin';
-    if(getTier(activeMember.totalSpend) !== oldTier)
-      showToast('success','🎉 Tier naik ke ' + activeMember.tier.toUpperCase() + '!', activeMember.name);
-  } else if(activeMember && hasSupaSession) {
-    const earned = Math.floor(finalTotal / 1000);
-    pointMsg = ' · +' + earned + ' poin';
+    saveCRM();
+    if(activeMember.tier !== oldTier)
+      showToast('success', '🎉 Tier naik ke ' + activeMember.tier.toUpperCase() + '!', activeMember.name);
+    // Jika offline (tidak ada Supabase session) → update Supabase secara terpisah
+    if(!hasSupaSession){
+      updateMemberInSupabase(activeMember.id, {
+        loyalty_points: activeMember.points,
+        total_spend:    activeMember.totalSpend,
+        tier:           activeMember.tier,
+      });
+    }
   }
   recordToShift(finalTotal, method, hpp);
   saveSESSION();
@@ -11172,36 +11218,86 @@ async function saveKaryawanToSupabase(karyawan){
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
-// Load CRM members dari Supabase → merge ke CRM_MEMBERS
-async function loadCRMFromSupabase(){ return; }
-// Tambah member baru → INSERT crm_members
-async function saveMemberToSupabase(member){
+// ── PHASE 6: CRM → Supabase ──────────────────────────────────────────────
+
+// Helper: map Supabase row → local CRM_MEMBERS format
+function supaRowToMember(row){
+  return {
+    id:          row.member_id,
+    name:        row.name,
+    phone:       row.phone || '',
+    email:       row.email || '',
+    points:      row.loyalty_points || 0,
+    tier:        row.tier || 'regular',
+    totalSpend:  parseFloat(row.total_spend) || 0,
+    joinedAt:    (row.joined_at || '').slice(0,10),
+    supaUUID:    row.id, // UUID internal Supabase
+  };
+}
+
+// Load semua member dari Supabase → replace CRM_MEMBERS
+async function loadCRMFromSupabase(){
+  if(!currentUser?.supaAuthId) return;
   try {
     const { data, error } = await supa
       .from('crm_members')
-      .insert({
-        member_id: member.id,
-        name: member.name,
-        phone: member.phone || null,
-        email: member.email || null,
-        loyalty_points: 0,
-        tier: 'regular',
-        total_spend: 0
-      })
-      .select('id').single();
-    if(error){ console.warn('Member insert error:', error.message); return null; }
-    return data.id;
-  } catch(e){ console.warn('saveMemberToSupabase error:', e); return null; }
+      .select('*')
+      .order('joined_at', { ascending: false });
+    if(error){ console.warn('[CRM] load error:', error.message); return; }
+    if(data && data.length > 0){
+      CRM_MEMBERS = data.map(supaRowToMember);
+      saveCRM();
+      console.log('[CRM] Loaded', CRM_MEMBERS.length, 'members from Supabase');
+    }
+  } catch(e){ console.warn('[CRM] loadCRMFromSupabase exception:', e.message); }
 }
-// Update member points/tier → UPDATE crm_members (dipanggil setelah void atau manual edit)
-async function updateMemberInSupabase(memberId, points, totalSpend, tier){
+
+// Registrasi member baru via RPC register_member (auto-generate OKM-xxxxx)
+async function saveMemberToSupabase(member){
+  if(!currentUser?.supaAuthId) return null;
+  try {
+    const { data, error } = await supa.rpc('register_member', {
+      p_name:  member.name,
+      p_phone: member.phone || '',
+      p_email: member.email || null,
+    });
+    if(error){ console.warn('[CRM] register_member error:', error.message); return null; }
+    if(data){
+      // Update local member dengan ID dari Supabase (bisa berbeda dari yang kita generate)
+      const existing = CRM_MEMBERS.find(m => m.phone === member.phone);
+      if(existing){
+        existing.id = data.member_id;
+        existing.supaUUID = data.id;
+        saveCRM();
+      }
+      console.log('[CRM] Member registered in Supabase:', data.member_id);
+      return data.id;
+    }
+  } catch(e){ console.warn('[CRM] saveMemberToSupabase exception:', e.message); return null; }
+  return null;
+}
+
+// Update member (points/tier/phone/email) → UPDATE crm_members
+async function updateMemberInSupabase(memberId, updates){
+  if(!currentUser?.supaAuthId) return;
   try {
     const { error } = await supa
       .from('crm_members')
-      .update({ loyalty_points: points, total_spend: totalSpend, tier })
+      .update(updates)
       .eq('member_id', memberId);
-    if(error) console.warn('Member update error:', error.message);
-  } catch(e){ console.warn('updateMemberInSupabase error:', e); }
+    if(error) console.warn('[CRM] update error:', error.message);
+    else console.log('[CRM] Member updated in Supabase:', memberId);
+  } catch(e){ console.warn('[CRM] updateMemberInSupabase exception:', e.message); }
+}
+
+// Lookup member dari Supabase (real-time search saat offline data tidak ada)
+async function lookupMemberFromSupabase(query){
+  if(!currentUser?.supaAuthId) return null;
+  try {
+    const { data, error } = await supa.rpc('lookup_member', { p_query: query });
+    if(error || !data || data.length === 0) return null;
+    return supaRowToMember(data[0]);
+  } catch(e){ console.warn('[CRM] lookupMemberFromSupabase exception:', e.message); return null; }
 }
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 7 — FINANCE
