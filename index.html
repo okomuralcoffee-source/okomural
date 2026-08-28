@@ -1449,12 +1449,21 @@ async function initSupabaseAuth() {
       const parsed = JSON.parse(saved);
       if (parsed && parsed.name && parsed.role) {
         currentUser = parsed;
+        // Restore activeShift jika ada
+        const cabId = activeBranch?.id || parsed.branchId || 'CAB-001';
+        const shiftKey = 'oko_shift_' + cabId;
+        try {
+          const savedShift = localStorage.getItem(shiftKey);
+          if(savedShift) activeShift = JSON.parse(savedShift);
+        } catch(e2) {}
+        console.log('[Auth] Restored from localStorage:', parsed.name, '| shift:', activeShift?.id || 'none');
         goToLauncher();
         return;
       }
     }
-  } catch(e) {}
+  } catch(e) { console.warn('[Auth] localStorage restore error:', e.message); }
 
+  console.log('[Auth] No session found, showing login');
   showScreen('login');
 }
 
