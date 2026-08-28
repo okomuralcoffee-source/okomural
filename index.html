@@ -5058,6 +5058,8 @@ function goToLauncher(){
   if(typeof initAllSupabaseData === 'function') initAllSupabaseData();
   // Pre-load employee UUID cache untuk attendance
   preloadEmployeeUUIDCache();
+  // Pre-load product UUID dari Supabase agar checkout bisa pakai UUID benar
+  loadProductsFromSupabase();
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
 async function doLogout(){
@@ -5142,7 +5144,11 @@ function showModule(mod){
   // All renders via setTimeout so module is visible (has dimensions) before render
   const allRenders={
     'inventory':renderInventory,
-    'menu':renderMenuMgmt,
+    'menu': async ()=>{
+      await loadProductsFromSupabase();
+      renderMenuMgmt();
+      renderMenuGrid();
+    },
     'attendance': async ()=>{
       _attViewMonth = new Date().getMonth();
       _attViewYear  = new Date().getFullYear();
@@ -8089,9 +8095,9 @@ async function confirmCheckout(){
   if(hasSupaSession) {
     try {
       // product_id harus UUID — lookup dari BOM_DATA atau skip jika tidak ada
-      // Map local product id → Supabase UUID (null untuk custom items)
+      // Map local product id → Supabase UUID via MENU.supaId atau PRODUCT_UUID_MAP
       const rpcItems = cart.map(c => ({
-        product_id:      c.custom ? null : getProductUUID(c.id),
+        product_id:      c.custom ? null : (MENU.find(m=>m.id===c.id)?.supaId || getProductUUID(c.id)),
         local_product_id: c.id || null,
         product_name:    c.name,
         quantity:        c.qty,
@@ -12017,42 +12023,79 @@ function applyWizardData(){
 // Load products dari Supabase → merge ke MENU array
 async function loadMenuFromSupabase(){ return; }
 // Toggle available produk → UPDATE products.is_available
+// ── PHASE 4: Menu → Supabase products ────────────────────────────────────
+
+const PROD_CAT_UUID = {
+  'coffee':    '44444444-0000-0000-0000-000000000001',
+  'noncoffee': '44444444-0000-0000-0000-000000000002',
+  'food':      '44444444-0000-0000-0000-000000000003',
+};
+
+async function loadProductsFromSupabase(){
+  if(!currentUser?.supaAuthId) return;
+  try {
+    const { data, error } = await supa
+      .from('products')
+      .select('id, name, price, is_available, description, emoji, category_id, product_categories(name)')
+      .order('name');
+    if(error){ console.warn('[Phase4] loadProducts error:', error.message); return; }
+    if(!data || data.length === 0) return;
+    data.forEach(row => {
+      const local = MENU.find(m => m.name === row.name);
+      if(local){
+        local.supaId    = row.id;
+        local.available = row.is_available;
+        local.stock     = row.is_available ? (local.stock || 1) : 0;
+        PRODUCT_UUID_MAP[local.id] = row.id;
+      } else {
+        const catName = row.product_categories?.name || 'coffee';
+        const newId = MENU.length > 0 ? Math.max(...MENU.map(m=>m.id))+1 : 1;
+        MENU.push({
+          id:newId, name:row.name, price:parseFloat(row.price)||0,
+          cat:catName, emoji:row.emoji||'☕', stock:row.is_available?10:0,
+          available:row.is_available, description:row.description||'', supaId:row.id,
+        });
+        PRODUCT_UUID_MAP[newId] = row.id;
+      }
+    });
+    console.log('[Phase4] Products synced:', data.length, 'items');
+  } catch(e){ console.warn('[Phase4] loadProductsFromSupabase error:', e.message); }
+}
+
 async function toggleProductAvailable(supaId, newVal, name){
   try {
-    if(supaId && supaId.length > 10){  // guard: valid UUID only (not empty string)
-      const { error } = await supa
-        .from('products')
-        .update({ is_available: newVal })
-        .eq('id', supaId);
+    if(supaId && supaId.length > 10){
+      const { error } = await supa.from('products').update({ is_available: newVal }).eq('id', supaId);
       if(error){ showToast('error','Gagal update status', error.message); return false; }
     }
-    showToast(newVal?'success':'warning', name + (newVal?' diaktifkan':' dinonaktifkan'));
+    showToast(newVal?'success':'warning', name+(newVal?' diaktifkan':' dinonaktifkan'));
     return true;
-  } catch(e){ console.warn('toggleProductAvailable error:', e); return false; }
+  } catch(e){ console.warn('[Phase4] toggleProductAvailable error:', e); return false; }
 }
-// Save produk (tambah/edit) → INSERT/UPDATE products
+
 async function saveProdukToSupabase(item, isEdit){
-  if(!item.supaId && !isEdit) {
-    // INSERT produk baru
-    try {
-      const { data, error } = await supa
-        .from('products')
-        .insert({ name: item.name, price: item.price, is_available: true, description: item.description||'' })
-        .select('id').single();
-      if(error){ console.warn('Product insert error:', error.message); return; }
+  if(!currentUser?.supaAuthId) return;
+  const catId = PROD_CAT_UUID[item.cat] || PROD_CAT_UUID['coffee'];
+  const payload = {
+    name:item.name, price:item.price, category_id:catId,
+    emoji:item.emoji||'☕', is_available:item.stock>0,
+    description:item.description||'',
+  };
+  try {
+    if(isEdit && item.supaId){
+      const { error } = await supa.from('products').update(payload).eq('id', item.supaId);
+      if(error) console.warn('[Phase4] product update error:', error.message);
+      else console.log('[Phase4] Product updated:', item.name);
+    } else if(!item.supaId){
+      const { data, error } = await supa.from('products').insert(payload).select('id').single();
+      if(error){ console.warn('[Phase4] product insert error:', error.message); return; }
       item.supaId = data.id;
-    } catch(e){ console.warn('saveProdukToSupabase insert error:', e); }
-  } else if(item.supaId) {
-    // UPDATE produk existing
-    try {
-      const { error } = await supa
-        .from('products')
-        .update({ name: item.name, price: item.price, description: item.description||'' })
-        .eq('id', item.supaId);
-      if(error){ console.warn('Product update error:', error.message); }
-    } catch(e){ console.warn('saveProdukToSupabase update error:', e); }
-  }
+      PRODUCT_UUID_MAP[item.id] = data.id;
+      console.log('[Phase4] Product added:', item.name, data.id.slice(0,8));
+    }
+  } catch(e){ console.warn('[Phase4] saveProdukToSupabase error:', e.message); }
 }
+
 // Save BOM ingredients → upsert product_ingredients
 async function saveBOMToSupabase(productId){
   const item = MENU.find(m => m.id === productId);
