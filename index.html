@@ -4800,28 +4800,44 @@ function openOpnameModal(){
       const diff   = actual - inv.qty;
       const oldQty = inv.qty;
       // ── SUPABASE: UPDATE inventory_stocks + INSERT stock_adjustments ──────
-      if(inv.supaId && currentUser?.id && currentUser?.branch_id) {
-        try {
-          // 1. UPDATE qty di inventory_stocks
-          const { error: updErr } = await supa
-            .from('inventory_stocks')
-            .update({ quantity: Math.max(0, actual), updated_at: new Date().toISOString() })
-            .eq('id', inv.supaId);
-          if(updErr) { showToast('error','Gagal update stok', updErr.message); return; }
-          // 2. INSERT ke stock_adjustments (audit trail)
-          await supa.from('stock_adjustments').insert({
-            branch_id:   currentUser.branch_id,
-            material_id: inv.materialId,
-            adjusted_by: currentUser.id,
-            qty_before:  oldQty,
-            qty_after:   Math.max(0, actual),
-            qty_diff:    diff,
-            reason,
-            notes
-          });
-        } catch(e) {
-          console.warn('Opname Supabase error (fallback lokal):', e);
-        }
+      if(currentUser?.supaAuthId) {
+        (async () => {
+          try {
+            // Pastikan supaId ada
+            if(!inv.supaId) await loadInventoryFromSupabase();
+            if(!inv.supaId){ console.warn('[Phase3] supaId masih null setelah load'); return; }
+            // 1. UPDATE qty di inventory_stocks
+            const { error: updErr } = await supa
+              .from('inventory_stocks')
+              .update({ quantity: Math.max(0, actual), updated_at: new Date().toISOString() })
+              .eq('id', inv.supaId);
+            if(updErr){ console.warn('[Phase3] opname update error:', updErr.message); return; }
+            // 2. INSERT ke stock_adjustments (audit trail)
+            const staffId = getStaffUUID();
+            if(!staffId){ console.warn('[Phase3] staffId null, skip adj log'); return; }
+            // Ambil matId jika belum ada
+            let matId = inv.matId;
+            if(!matId){
+              const { data: row } = await supa.from('inventory_stocks').select('material_id').eq('id', inv.supaId).single();
+              if(row) matId = row.material_id;
+            }
+            if(!matId){ console.warn('[Phase3] matId null, skip adj log'); return; }
+            const { error: adjErr } = await supa.from('stock_adjustments').insert({
+              branch_id:   getBranchUUID(),
+              material_id: matId,
+              adjusted_by: staffId,
+              qty_before:  oldQty,
+              qty_after:   Math.max(0, actual),
+              qty_diff:    diff,
+              reason:      reason || 'Opname manual',
+              notes:       notes || null,
+            });
+            if(adjErr) console.warn('[Phase3] adj insert error:', adjErr.message);
+            else console.log('[Phase3] Opname logged:', matName, oldQty, '→', actual);
+          } catch(e) {
+            console.warn('[Phase3] Opname Supabase error:', e.message);
+          }
+        })();
       }
       // Local update
       inv.qty    = Math.max(0, actual);
