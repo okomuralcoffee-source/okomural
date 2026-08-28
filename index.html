@@ -3333,20 +3333,42 @@ async function hydrateUserFromSession(session) {
 <!-- ══════════════════════════════════════════════════ -->
 <!-- EXPENSES & OPEX -->
 <div class="module" id="module-expenses">
-  <div class="page-header"><div class="page-header-left"><h2>Expenses &amp; OPEX</h2><p>Pengeluaran operasional — Agustus 2025</p></div><button class="btn btn-primary btn-sm" onclick="showToast('info','Form catat pengeluaran')">+ Pengeluaran</button></div>
-  <div class="stat-row-lg">
-    <div class="stat-card-lg"><div class="lbl">Total OPEX Bulan Ini</div><div class="val">Rp 38,4jt</div><div class="sub down">+4% vs bulan lalu</div></div>
-    <div class="stat-card-lg"><div class="lbl">Budget OPEX</div><div class="val">Rp 40jt</div><div class="sub up">Rp 1,6jt sisa</div></div>
-    <div class="stat-card-lg"><div class="lbl">% dari Omzet</div><div class="val">43,9%</div><div class="sub down">Target &lt;42%</div></div>
+  <div class="page-header">
+    <div class="page-header-left"><h2>Expenses &amp; OPEX</h2><p id="opex-subtitle">Pengeluaran operasional bulan ini</p></div>
+    <button class="btn btn-primary btn-sm" onclick="openOpexModal()">+ Pengeluaran</button>
   </div>
+  <!-- KPI row -->
+  <div class="stat-row-lg" id="opex-kpi-row">
+    <div class="stat-card-lg"><div class="lbl">Total Bulan Ini</div><div class="val" id="opex-kpi-total">Rp 0</div><div class="sub neu" id="opex-kpi-count">0 transaksi</div></div>
+    <div class="stat-card-lg"><div class="lbl">Minggu Ini</div><div class="val" id="opex-kpi-week">Rp 0</div><div class="sub neu">7 hari terakhir</div></div>
+    <div class="stat-card-lg"><div class="lbl">Terbesar</div><div class="val" id="opex-kpi-max">—</div><div class="sub neu" id="opex-kpi-max-cat">—</div></div>
+  </div>
+  <!-- Filter bar -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <select id="opex-filter-cat" onchange="renderExpensesModule()" style="padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+      <option value="all">Semua Kategori</option>
+    </select>
+    <select id="opex-filter-period" onchange="renderExpensesModule()" style="padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+      <option value="month">Bulan Ini</option>
+      <option value="week">Minggu Ini</option>
+      <option value="all">Semua</option>
+    </select>
+    <input type="text" id="opex-search" placeholder="Cari keterangan..." oninput="renderExpensesModule()" style="flex:1;min-width:120px;padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+  </div>
+  <!-- Table -->
   <div class="table-wrap">
     <div class="table-header"><h3>Log Pengeluaran</h3></div>
-    <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th><th></th></tr></thead><tbody>
-      <tr><td style="color:var(--text3)">16 Agu</td><td>Listrik &amp; Air</td><td style="color:var(--text2)">Tagihan PLN</td><td style="color:var(--text)">Rp 3.800.000</td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit pengeluaran')">Edit</button></td></tr>
-      <tr><td style="color:var(--text3)">15 Agu</td><td>Perlengkapan</td><td style="color:var(--text2)">Kertas struk &amp; plastik</td><td style="color:var(--text)">Rp 240.000</td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit pengeluaran')">Edit</button></td></tr>
-      <tr><td style="color:var(--text3)">14 Agu</td><td>Marketing</td><td style="color:var(--text2)">Instagram Ads Agustus</td><td style="color:var(--text)">Rp 1.200.000</td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit pengeluaran')">Edit</button></td></tr>
-      <tr><td style="color:var(--text3)">1 Agu</td><td>Sewa Tempat</td><td style="color:var(--text2)">Sewa HQ Indrapura</td><td style="color:var(--text)">Rp 8.500.000</td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit pengeluaran')">Edit</button></td></tr>
-    </tbody></table>
+    <table>
+      <thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Cabang</th><th style="text-align:right">Nominal</th><th></th></tr></thead>
+      <tbody id="opex-tbody">
+        <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">Memuat data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <!-- Breakdown per kategori -->
+  <div class="adv-card" style="margin-top:16px">
+    <div class="adv-card-hd">📊 Breakdown per Kategori</div>
+    <div id="opex-breakdown" style="margin-top:12px"></div>
   </div>
 </div>
 <!-- CAPITAL INJECTION -->
@@ -4181,6 +4203,7 @@ const LS_KEYS = {
   loyalty:  'okomural_loyalty_config',
   actlog:    'okomural_activity_log',
   attendance: 'okomural_attendance_db',
+  opex:     'okomural_opex_db',
 };
 function lsSave(key, data){
   try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){ console.warn('lsSave error:', e); }
@@ -4193,9 +4216,15 @@ function lsLoad(key, fallback){
   return fallback;
 }
 // Load semua data dari localStorage saat startup (override defaults jika ada)
+// ── OPEX_DB: Pengeluaran operasional (sewa, listrik, marketing, dll) ──────
+let OPEX_CATEGORIES = ['Sewa Tempat', 'Listrik & Air', 'Gaji & THR', 'Marketing', 'Perlengkapan', 'Transportasi', 'Perawatan & Servis', 'Lain-lain'];
+let OPEX_DB = []; // {id, date, kategori, keterangan, nominal, cabangId, kasir, createdAt}
+function saveOPEX(){ lsSave(LS_KEYS.opex, OPEX_DB); }
+
 function loadAllLocalData(){
   CABANG_DB     = lsLoad(LS_KEYS.cabang,   CABANG_DB);
   USER_DB       = lsLoad(LS_KEYS.users,    USER_DB);
+  OPEX_DB       = lsLoad(LS_KEYS.opex,     OPEX_DB);
   KARYAWAN_DB   = lsLoad(LS_KEYS.karyawan, KARYAWAN_DB);
   CAPEX_DB      = lsLoad(LS_KEYS.capex,    CAPEX_DB);
   capexIdCounter= CAPEX_DB.length + 1;
@@ -4810,7 +4839,7 @@ function showModule(mod){
     'capex-advisory':renderCapexAdvisory,
     'capex-logs':renderCapexLogs,
     'capital-injection':renderCapitalInjection,
-    'expenses':()=>{ if(typeof renderBelanjaBody==='function') renderBelanjaBody(); },
+    'expenses': renderExpensesModule,
     'pricelist':()=>{ if(typeof renderPricelist==='function') renderPricelist(); },
     'consignment': renderConsignment,
   };
@@ -11424,6 +11453,191 @@ async function saveKaryawanToSupabase(karyawan){
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
+// ── EXPENSES & OPEX — Full CRUD ───────────────────────────────────────────
+
+function renderExpensesModule(){
+  const now     = new Date();
+  const todayStr= now.toISOString().slice(0,10);
+  const weekAgo = new Date(now - 7*864e5).toISOString().slice(0,10);
+  const monthStr= now.toISOString().slice(0,7);
+
+  // Filters
+  const catF    = document.getElementById('opex-filter-cat')?.value    || 'all';
+  const period  = document.getElementById('opex-filter-period')?.value || 'month';
+  const q       = (document.getElementById('opex-search')?.value || '').toLowerCase().trim();
+
+  // Populate kategori filter
+  const catSel = document.getElementById('opex-filter-cat');
+  if(catSel && catSel.options.length <= 1){
+    OPEX_CATEGORIES.forEach(c => {
+      const o = document.createElement('option'); o.value = c; o.textContent = c;
+      catSel.appendChild(o);
+    });
+  }
+
+  // Filter data
+  let items = [...OPEX_DB].reverse(); // terbaru dulu
+  if(period === 'month') items = items.filter(e => (e.date||'').slice(0,7) === monthStr);
+  if(period === 'week')  items = items.filter(e => (e.date||'') >= weekAgo);
+  if(catF !== 'all')     items = items.filter(e => e.kategori === catF);
+  if(q)                  items = items.filter(e => (e.keterangan||'').toLowerCase().includes(q));
+
+  // KPI
+  const totalMonth = OPEX_DB.filter(e=>(e.date||'').slice(0,7)===monthStr).reduce((s,e)=>s+(e.nominal||0),0);
+  const totalWeek  = OPEX_DB.filter(e=>(e.date||'')>=weekAgo).reduce((s,e)=>s+(e.nominal||0),0);
+  const maxEntry   = [...OPEX_DB].sort((a,b)=>(b.nominal||0)-(a.nominal||0))[0];
+  const fmt = n => 'Rp ' + (n||0).toLocaleString('id');
+  const el = id => document.getElementById(id);
+  if(el('opex-kpi-total'))   el('opex-kpi-total').textContent   = fmt(totalMonth);
+  if(el('opex-kpi-count'))   el('opex-kpi-count').textContent   = OPEX_DB.filter(e=>(e.date||'').slice(0,7)===monthStr).length + ' transaksi';
+  if(el('opex-kpi-week'))    el('opex-kpi-week').textContent    = fmt(totalWeek);
+  if(el('opex-kpi-max'))     el('opex-kpi-max').textContent     = maxEntry ? fmt(maxEntry.nominal) : '—';
+  if(el('opex-kpi-max-cat')) el('opex-kpi-max-cat').textContent = maxEntry ? maxEntry.kategori : '—';
+  if(el('opex-subtitle'))    el('opex-subtitle').textContent    = 'Total ' + monthStr.slice(0,7).replace('-','/') + ': ' + fmt(totalMonth);
+
+  // Table
+  const tbody = el('opex-tbody');
+  if(tbody){
+    if(items.length === 0){
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">
+        ${q||catF!=='all'?'Tidak ada pengeluaran yang cocok dengan filter':'Belum ada pengeluaran dicatat'}
+        <br><a href="#" onclick="openOpexModal();return false" style="color:var(--green);font-size:11px;margin-top:6px;display:inline-block">+ Catat pengeluaran pertama</a>
+      </td></tr>`;
+    } else {
+      const cabangName = id => CABANG_DB.find(c=>c.id===id)?.nama || id || '—';
+      tbody.innerHTML = items.map(e => `<tr>
+        <td style="color:var(--text3);white-space:nowrap">${e.date ? new Date(e.date+'T00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+        <td><span style="background:var(--bg3);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">${e.kategori||'—'}</span></td>
+        <td style="color:var(--text2)">${e.keterangan||'—'}</td>
+        <td style="font-size:11px;color:var(--text3)">${cabangName(e.cabangId)}</td>
+        <td style="text-align:right;font-weight:600;color:var(--red)">-${fmt(e.nominal)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" onclick="openOpexModal('${e.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteOpex('${e.id}')" style="margin-left:4px">×</button>
+        </td>
+      </tr>`).join('');
+    }
+  }
+
+  // Breakdown per kategori
+  const breakdown = el('opex-breakdown');
+  if(breakdown){
+    const allMonth = OPEX_DB.filter(e=>(e.date||'').slice(0,7)===monthStr);
+    const totalAll = allMonth.reduce((s,e)=>s+(e.nominal||0),0) || 1;
+    const byCat = {};
+    allMonth.forEach(e=>{ byCat[e.kategori]=(byCat[e.kategori]||0)+(e.nominal||0); });
+    const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+    if(sorted.length === 0){
+      breakdown.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Belum ada data bulan ini</div>';
+    } else {
+      breakdown.innerHTML = sorted.map(([cat,val]) => {
+        const pct = ((val/totalAll)*100).toFixed(0);
+        return `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span>${cat}</span><span style="font-weight:600">${pct}% · ${fmt(val)}</span>
+          </div>
+          <div style="height:4px;background:var(--bg3);border-radius:2px">
+            <div style="width:${pct}%;height:100%;background:var(--red);border-radius:2px"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+}
+
+function openOpexModal(id){
+  const entry = id ? OPEX_DB.find(e=>e.id===id) : null;
+  const edit  = !!entry;
+  const catOptions = OPEX_CATEGORIES.map(c =>
+    `<option value="${c}"${entry?.kategori===c?' selected':''}>${c}</option>`
+  ).join('');
+  const cabangOptions = CABANG_DB.map(c =>
+    `<option value="${c.id}"${(entry?.cabangId||activeBranch?.id)===c.id?' selected':''}>${c.nama}</option>`
+  ).join('');
+
+  openGModal(
+    edit ? 'Edit Pengeluaran' : 'Catat Pengeluaran Baru',
+    `<div class="gfield">
+      <label>Kategori</label>
+      <select id="opex-kat" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+        ${catOptions}
+      </select>
+    </div>
+    <div class="gfield">
+      <label>Keterangan</label>
+      <input id="opex-ket" type="text" value="${entry?.keterangan||''}" placeholder="Detail pengeluaran..." style="width:100%">
+    </div>
+    <div class="gfield-row">
+      <div class="gfield">
+        <label>Nominal (Rp)</label>
+        <input id="opex-nom" type="number" value="${entry?.nominal||''}" placeholder="0" min="0">
+      </div>
+      <div class="gfield">
+        <label>Tanggal</label>
+        <input id="opex-tgl" type="date" value="${entry?.date||new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+    <div class="gfield">
+      <label>Cabang</label>
+      <select id="opex-cab" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+        ${cabangOptions}
+      </select>
+    </div>`,
+    edit ? 'Simpan Perubahan' : 'Catat Pengeluaran',
+    () => {
+      const kat  = document.getElementById('opex-kat').value;
+      const ket  = document.getElementById('opex-ket').value.trim();
+      const nom  = parseInt(document.getElementById('opex-nom').value) || 0;
+      const tgl  = document.getElementById('opex-tgl').value;
+      const cab  = document.getElementById('opex-cab').value;
+      if(!ket){ showToast('error','Keterangan wajib diisi'); return; }
+      if(nom <= 0){ showToast('error','Nominal harus lebih dari 0'); return; }
+      if(edit){
+        entry.kategori   = kat;
+        entry.keterangan = ket;
+        entry.nominal    = nom;
+        entry.date       = tgl;
+        entry.cabangId   = cab;
+        showToast('success', 'Pengeluaran diperbarui', kat + ' · ' + 'Rp ' + nom.toLocaleString('id'));
+        logActivity('OPEX', 'Edit: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
+      } else {
+        const newEntry = {
+          id:          'OPX-' + Date.now(),
+          kategori:    kat,
+          keterangan:  ket,
+          nominal:     nom,
+          date:        tgl,
+          cabangId:    cab,
+          kasir:       currentUser?.name || '—',
+          createdAt:   new Date().toISOString(),
+        };
+        OPEX_DB.push(newEntry);
+        showToast('success', 'Pengeluaran dicatat', kat + ' · Rp ' + nom.toLocaleString('id'));
+        logActivity('OPEX', 'Catat: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
+      }
+      saveOPEX();
+      renderExpensesModule();
+    }
+  );
+}
+
+function deleteOpex(id){
+  const entry = OPEX_DB.find(e=>e.id===id);
+  if(!entry) return;
+  openConfirm(
+    'Hapus Pengeluaran',
+    '"' + entry.keterangan + '" (Rp ' + (entry.nominal||0).toLocaleString('id') + ') akan dihapus permanen.',
+    'Hapus',
+    () => {
+      OPEX_DB.splice(OPEX_DB.indexOf(entry), 1);
+      saveOPEX();
+      renderExpensesModule();
+      showToast('success', 'Pengeluaran dihapus');
+      logActivity('OPEX', 'Hapus: ' + entry.keterangan);
+    }
+  );
+}
+
 // ── PHASE 6: CRM → Supabase ──────────────────────────────────────────────
 
 // Helper: map Supabase row → local CRM_MEMBERS format
