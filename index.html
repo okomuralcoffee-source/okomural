@@ -4857,7 +4857,93 @@ function updateOpnameDiff(){
   diffEl.textContent = `Selisih: ${diff>=0?'+':''}${diff.toFixed(1)} — ${diff===0?'Sesuai':diff>0?'Lebih dari sistem':'Kurang dari sistem'}`;
 }
 /* ── INVENTORY: load dari Supabase, merge ke INV cache ── */
-async function loadInventoryFromSupabase(){ return; }
+// ── PHASE 3: Inventory → Supabase inventory_stocks ────────────────────────
+
+// Map Supabase material name → local INV item (by name)
+async function loadInventoryFromSupabase(){
+  if(!currentUser?.supaAuthId) return;
+  try {
+    const branchUUID = getBranchUUID();
+    const { data, error } = await supa
+      .from('inventory_stocks')
+      .select('id, quantity, unit, min_stock_alert, material_id, materials_master(name)')
+      .eq('branch_id', branchUUID);
+    if(error){ console.warn('[Phase3] loadInventory error:', error.message); return; }
+    if(!data || data.length === 0) return;
+
+    // Merge Supabase data ke INV array
+    data.forEach(row => {
+      const matName = row.materials_master?.name;
+      if(!matName) return;
+      const local = INV.find(i => i.name === matName);
+      if(local){
+        // Update qty + metadata dari Supabase
+        local.qty      = parseFloat(row.quantity) || local.qty;
+        local.unit     = row.unit || local.unit;
+        local.min      = parseFloat(row.min_stock_alert) || local.min;
+        local.supaId   = row.id;         // inventory_stocks.id UUID
+        local.matId    = row.material_id; // materials_master.id UUID
+        local.status   = local.qty <= 0 ? 'critical' : local.qty <= local.min ? 'warning' : 'safe';
+      } else {
+        // Bahan ada di Supabase tapi tidak ada di INV lokal — tambahkan
+        const qty = parseFloat(row.quantity) || 0;
+        const min = parseFloat(row.min_stock_alert) || 0;
+        INV.push({
+          name:    matName,
+          qty,
+          unit:    row.unit,
+          min,
+          supaId:  row.id,
+          matId:   row.material_id,
+          status:  qty <= 0 ? 'critical' : qty <= min ? 'warning' : 'safe',
+        });
+      }
+    });
+    console.log('[Phase3] Inventory loaded from Supabase:', data.length, 'items for', branchUUID.slice(0,8));
+  } catch(e){
+    console.warn('[Phase3] loadInventory exception:', e.message);
+  }
+}
+
+// Update stok di Supabase setelah edit opname
+async function updateInventoryStockInSupabase(item){
+  if(!currentUser?.supaAuthId || !item.supaId) return;
+  try {
+    const { error } = await supa
+      .from('inventory_stocks')
+      .update({
+        quantity:        item.qty,
+        unit:            item.unit,
+        min_stock_alert: item.min,
+        updated_at:      new Date().toISOString(),
+      })
+      .eq('id', item.supaId);
+    if(error) console.warn('[Phase3] updateStock error:', error.message);
+    else console.log('[Phase3] Stock updated in Supabase:', item.name, '→', item.qty, item.unit);
+  } catch(e){
+    console.warn('[Phase3] updateStock exception:', e.message);
+  }
+}
+
+// Log opname ke stock_adjustments
+async function logStockAdjustmentToSupabase(item, oldQty, reason){
+  if(!currentUser?.supaAuthId || !item.matId) return;
+  try {
+    const { error } = await supa
+      .from('stock_adjustments')
+      .insert({
+        material_id:  item.matId,
+        branch_id:    getBranchUUID(),
+        adjusted_by:  getStaffUUID(),
+        old_quantity: oldQty,
+        new_quantity: item.qty,
+        reason:       reason || 'Manual opname',
+      });
+    if(error) console.warn('[Phase3] logAdjustment error:', error.message);
+  } catch(e){
+    console.warn('[Phase3] logAdjustment exception:', e.message);
+  }
+}
 /* Update renderInventory to show opname logs */
 async function renderInventory(){
   const tbody=document.getElementById('inv-table-body');
@@ -8446,12 +8532,16 @@ function openEditStok(name,qty,unit,min){
     'Simpan',
     ()=>{
       const inv=INV.find(i=>i.name===name); if(!inv)return;
+      const oldQty = inv.qty;
       inv.qty=parseFloat(document.getElementById('es-qty').value)||0;
       inv.unit=document.getElementById('es-unit').value||unit;
       inv.min=parseFloat(document.getElementById('es-min').value)||0;
       inv.status=inv.qty<=0?'critical':inv.qty<=inv.min?'warning':'safe';
-      renderInventory(); // sudah include checkStockAlerts() di akhir
+      renderInventory();
       showToast('success','Stok '+name+' diperbarui','Stok: '+inv.qty+' '+inv.unit);
+      // ── SUPABASE Phase 3: update inventory_stocks + log opname ─────────
+      updateInventoryStockInSupabase(inv);
+      if(oldQty !== inv.qty) logStockAdjustmentToSupabase(inv, oldQty, 'Manual opname via ERP');
     }
   );
 }
