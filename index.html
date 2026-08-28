@@ -4907,12 +4907,24 @@ async function loadInventoryFromSupabase(){
 
 // Update stok di Supabase setelah edit opname
 async function updateInventoryStockInSupabase(item){
-  if(!currentUser?.supaAuthId || !item.supaId) return;
+  if(!currentUser?.supaAuthId) return;
   try {
+    // Jika belum ada supaId, cari dulu dari Supabase by name + branch
+    if(!item.supaId){
+      const { data: rows } = await supa
+        .from('inventory_stocks')
+        .select('id, material_id, materials_master(name)')
+        .eq('branch_id', getBranchUUID());
+      if(rows){
+        const match = rows.find(r => r.materials_master?.name === item.name);
+        if(match){ item.supaId = match.id; item.matId = match.material_id; }
+      }
+    }
+    if(!item.supaId){ console.warn('[Phase3] supaId not found for:', item.name); return; }
     const { error } = await supa
       .from('inventory_stocks')
       .update({
-        quantity:        item.qty,
+        quantity:        Math.max(0, item.qty),
         unit:            item.unit,
         min_stock_alert: item.min,
         updated_at:      new Date().toISOString(),
@@ -4927,12 +4939,21 @@ async function updateInventoryStockInSupabase(item){
 
 // Log opname ke stock_adjustments
 async function logStockAdjustmentToSupabase(item, oldQty, reason){
-  if(!currentUser?.supaAuthId || !item.matId) return;
+  if(!currentUser?.supaAuthId) return;
+  // matId diperlukan untuk INSERT — ambil dari item atau lookup via supaId
+  let matId = item.matId;
+  if(!matId && item.supaId){
+    try {
+      const { data } = await supa.from('inventory_stocks').select('material_id').eq('id', item.supaId).single();
+      if(data) matId = data.material_id;
+    } catch(e){}
+  }
+  if(!matId){ console.warn('[Phase3] matId not found for adjustment:', item.name); return; }
   try {
     const { error } = await supa
       .from('stock_adjustments')
       .insert({
-        material_id:  item.matId,
+        material_id:  matId,
         branch_id:    getBranchUUID(),
         adjusted_by:  getStaffUUID(),
         old_quantity: oldQty,
@@ -4940,6 +4961,7 @@ async function logStockAdjustmentToSupabase(item, oldQty, reason){
         reason:       reason || 'Manual opname',
       });
     if(error) console.warn('[Phase3] logAdjustment error:', error.message);
+    else console.log('[Phase3] Stock adjustment logged:', item.name, oldQty, '→', item.qty);
   } catch(e){
     console.warn('[Phase3] logAdjustment exception:', e.message);
   }
@@ -8537,11 +8559,17 @@ function openEditStok(name,qty,unit,min){
       inv.unit=document.getElementById('es-unit').value||unit;
       inv.min=parseFloat(document.getElementById('es-min').value)||0;
       inv.status=inv.qty<=0?'critical':inv.qty<=inv.min?'warning':'safe';
+      // Update local dulu → tampil langsung
       renderInventory();
       showToast('success','Stok '+name+' diperbarui','Stok: '+inv.qty+' '+inv.unit);
-      // ── SUPABASE Phase 3: update inventory_stocks + log opname ─────────
-      updateInventoryStockInSupabase(inv);
-      if(oldQty !== inv.qty) logStockAdjustmentToSupabase(inv, oldQty, 'Manual opname via ERP');
+      // ── SUPABASE Phase 3: update + log, lalu reload dari Supabase ──────
+      (async () => {
+        await updateInventoryStockInSupabase(inv);
+        if(oldQty !== inv.qty) await logStockAdjustmentToSupabase(inv, oldQty, 'Manual opname via ERP');
+        // Reload dari Supabase untuk pastikan UI sinkron
+        await loadInventoryFromSupabase();
+        renderInventory();
+      })();
     }
   );
 }
