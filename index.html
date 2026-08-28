@@ -2483,11 +2483,27 @@ async function hydrateUserFromSession(session) {
     <div class="page-header-left"><h2>Product Menu Management</h2><p>Kelola produk, harga, ketersediaan, BOM &amp; modifier</p></div>
     <div style="display:flex;gap:6px">
       <button class="btn btn-secondary btn-sm" id="menu-tab-modifier-btn" onclick="switchMenuTab('modifier')">🧂 Modifier</button>
-      <button class="btn btn-primary btn-sm" id="menu-tab-produk-btn" onclick="switchMenuTab('produk')">+ Produk</button>
+      <button class="btn btn-secondary btn-sm" onclick="switchMenuTab('produk')" id="menu-tab-produk-btn">Semua Produk</button>
+      <button class="btn btn-primary btn-sm" onclick="openProdukModal(null)">+ Produk</button>
     </div>
   </div>
   <!-- Menu tab: Produk -->
   <div id="menu-tab-produk">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="menu-search" placeholder="Cari produk..." oninput="renderMenuMgmt()" style="flex:1;min-width:140px;padding:7px 12px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+      <select id="menu-cat-filter" onchange="renderMenuMgmt()" style="padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+        <option value="all">Semua Kategori</option>
+        <option value="coffee">Coffee</option>
+        <option value="noncoffee">Non-Coffee</option>
+        <option value="food">Makanan</option>
+      </select>
+      <select id="menu-avail-filter" onchange="renderMenuMgmt()" style="padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+        <option value="all">Semua Status</option>
+        <option value="available">Tersedia</option>
+        <option value="unavailable">Tidak Tersedia</option>
+      </select>
+    </div>
+    <div id="menu-count" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>
     <div class="menu-mgmt-grid" id="menu-mgmt-grid"></div>
   </div>
   <!-- Menu tab: Modifier -->
@@ -7794,26 +7810,56 @@ function switchInvTab(el,tab){document.querySelectorAll('.inv-tab').forEach(t=>t
 function renderMenuMgmt(){
   const el=document.getElementById('menu-mgmt-grid');if(!el)return;
   const catMap={coffee:'Coffee',noncoffee:'Non-Coffee',food:'Makanan'};
-  el.innerHTML=MENU.map(item=>{
+  const q=(document.getElementById('menu-search')?.value||'').toLowerCase().trim();
+  const catF=document.getElementById('menu-cat-filter')?.value||'all';
+  const availF=document.getElementById('menu-avail-filter')?.value||'all';
+  let items=[...MENU];
+  if(q) items=items.filter(m=>m.name.toLowerCase().includes(q));
+  if(catF!=='all') items=items.filter(m=>m.cat===catF);
+  if(availF==='available') items=items.filter(m=>m.stock>0||m.available!==false);
+  if(availF==='unavailable') items=items.filter(m=>m.stock<=0||m.available===false);
+  const countEl=document.getElementById('menu-count');
+  if(countEl) countEl.textContent=items.length+' produk'+(q||catF!=='all'||availF!=='all'?' (difilter dari '+MENU.length+' total)':'');
+  if(items.length===0){
+    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">🔍</div><div style="font-size:13px;font-weight:600">Tidak ada produk ditemukan</div><div style="font-size:11px;margin-top:4px">Coba ubah filter atau <a href="#" onclick="openProdukModal(null);return false" style="color:var(--green)">tambah produk baru</a></div></div>';
+    return;
+  }
+  el.innerHTML=items.map(item=>{
     const bom=BOM_DATA[item.id];
     const hpp=calcHPP(item.id);
+    const isAvail = item.stock>0 || item.available!==false;
     let bomBadge='';
     if(!bom){bomBadge=`<div class="menu-bom-badge missing" onclick="goToBOM(${item.id})">⚠ BOM belum dibuat</div>`;}
     else if(bom.ingredients.length===0){bomBadge=`<div class="menu-bom-badge purchased" onclick="goToBOM(${item.id})">📦 Produk jadi</div>`;}
     else{const margin=hpp?((item.price-hpp)/item.price*100).toFixed(0):'—';bomBadge=`<div class="menu-bom-badge has" onclick="goToBOM(${item.id})">✓ BOM · ${bom.ingredients.length} bahan · Margin ${margin}%</div>`;}
-    return `<div class="menu-mgmt-card">
-      <div style="position:absolute;top:10px;right:10px"><label class="toggle-sw"><input type="checkbox" ${item.stock>0?'checked':''} onchange="(async()=>{const ok=await toggleProductAvailable('${item.supaId||""}'+'',this.checked,'${item.name}');if(!ok){this.checked=!this.checked;}else{const m=MENU.find(x=>x.id===${item.id});if(m)m.available=this.checked;}})()"><span class="toggle-track"></span></label></div>
-      <div style="font-size:22px;margin-bottom:6px">${item.emoji}</div>
+    return `<div class="menu-mgmt-card" style="${!isAvail?'opacity:.55':''}">
+      <div style="position:absolute;top:10px;right:10px">
+        <label class="toggle-sw" title="${isAvail?'Tersedia':'Tidak tersedia — klik untuk aktifkan'}">
+          <input type="checkbox" ${isAvail?'checked':''} onchange="toggleMenuAvailable(${item.id},this.checked)">
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      ${!isAvail?'<div style="position:absolute;top:8px;left:8px;font-size:9px;background:var(--red-dim);color:var(--red);padding:2px 6px;border-radius:3px;font-weight:600">NONAKTIF</div>':''}
+      <div style="font-size:22px;margin-bottom:6px;margin-top:${!isAvail?'12px':'0'}">${item.emoji||'☕'}</div>
       <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px">${item.name}</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${catMap[item.cat]||item.cat} · Rp ${item.price.toLocaleString('id')}</div>
       ${bomBadge}
       <div style="display:flex;gap:4px;margin-top:10px">
-        <button class="btn btn-secondary btn-sm" onclick="openEditProduk(${item.id})">Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="openEditProduk(${item.id})">✏ Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="goToBOM(${item.id})" style="flex:1">BOM</button>
-        <button class="btn btn-danger btn-sm" onclick="confirmHapusProduk(${item.id})">×</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmHapusProduk(${item.id})" title="Hapus produk">×</button>
       </div>
     </div>`;
   }).join('');
+}
+function toggleMenuAvailable(id, val){
+  const item=MENU.find(m=>m.id===id);
+  if(!item) return;
+  item.available = val;
+  item.stock = val ? (item.stock||1) : 0;
+  renderMenuMgmt();
+  renderMenuGrid();
+  showToast(val?'success':'info', item.name, val?'Produk diaktifkan':'Produk dinonaktifkan');
 }
 function renderBarChart(){const data=[{d:'Sen',v:3800},{d:'Sel',v:4200},{d:'Rab',v:3600},{d:'Kam',v:5100},{d:'Jum',v:6200},{d:'Sab',v:7400},{d:'Min',v:4200}],max=Math.max(...data.map(d=>d.v));const _bc=document.getElementById('bar-chart');if(!_bc)return;_bc.innerHTML=data.map(d=>'<div class="bar-day"><div class="bar-fill" style="height:'+Math.round((d.v/max)*100)+'%" title="Rp '+d.v.toLocaleString('id')+'"></div><div class="bar-day-label">'+d.d+'</div></div>').join('')}
 function renderCalendar(){const DL=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];let html=DL.map(d=>'<div class="cal-day-label">'+d+'</div>').join('');for(let i=0;i<5;i++)html+='<div class="cal-day empty"></div>';for(let d=1;d<=31;d++){const st=ATT_DATA[d]||'',cls=['cal-day',d===14?'today':'',st,!st&&((d+4)%7===0||(d+4)%7===6)?'libur':''].filter(Boolean).join(' ');html+='<div class="'+cls+'">'+d+'</div>'}document.getElementById('calendar-grid').innerHTML=html}
@@ -7911,9 +7957,10 @@ function openProdukModal(item){
   openGModal(edit?'Edit Produk — '+item.name:'Tambah Produk Baru',
     `<div class="gfield"><label>Nama Produk</label><input id="pm-name" type="text" value="${item?item.name:''}" placeholder="Nama menu..."></div>
     <div class="gfield"><label>Kategori</label><select id="pm-cat" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px">${sel('',item?item.cat:'')}</select></div>
+    <div class="gfield"><label>Deskripsi (opsional)</label><input id="pm-desc" type="text" value="${item&&item.description?item.description:''}" placeholder="Keterangan singkat produk..."></div>
     <div class="gfield-row">
       <div class="gfield"><label>Harga Jual (Rp)</label><input id="pm-price" type="number" value="${item?item.price:''}" placeholder="28000"></div>
-      <div class="gfield"><label>Stok</label><input id="pm-stock" type="number" value="${item?item.stock:0}" placeholder="0"></div>
+      <div class="gfield"><label>Stok Awal</label><input id="pm-stock" type="number" value="${item?item.stock:0}" placeholder="0"></div>
     </div>
     <div class="gfield">
       <label>Gambar Menu</label>
@@ -7962,21 +8009,27 @@ function openProdukModal(item){
         const url = document.getElementById('pm-photo-url')?.value.trim();
         photoUrl = b64 || url || null;
       }
-      if(!nama){showToast('error','Nama produk kosong');return;}
+      const desc=document.getElementById('pm-desc')?.value.trim()||'';
+      if(!nama){showToast('error','Nama produk wajib diisi');return;}
+      if(harga<=0){showToast('error','Harga jual harus diisi');return;}
       if(edit){
-        item.name=nama;item.price=harga;item.stock=stok;item.cat=cat;item.emoji=emoji;
-        item.photoUrl = photoUrl;
-        if(typeof saveProdukToSupabase === 'function') saveProdukToSupabase(item, true);
-        showToast('success',nama+' diperbarui');
+        item.name=nama; item.price=harga; item.stock=stok; item.cat=cat;
+        item.emoji=emoji; item.photoUrl=photoUrl; item.description=desc;
+        item.available = stok > 0;
+        saveProdukToSupabase(item, true);
+        showToast('success', nama+' diperbarui');
+        logActivity('Menu', 'Edit produk: '+nama+' · Rp '+harga.toLocaleString('id'));
       } else {
-        const newId=Math.max(...MENU.map(m=>m.id))+1;
-        const nProd={id:newId,name:nama,price:harga,cat,emoji,stock:stok,photoUrl,description:''};
+        const newId = MENU.length > 0 ? Math.max(...MENU.map(m=>m.id))+1 : 1;
+        const nProd = {id:newId, name:nama, price:harga, cat, emoji, stock:stok,
+                       photoUrl, description:desc, available:stok>0};
         MENU.push(nProd);
-        if(typeof saveProdukToSupabase === 'function') saveProdukToSupabase(nProd, false);
-        showToast('success',nama+' ditambahkan ke menu');
+        saveProdukToSupabase(nProd, false);
+        showToast('success', '✅ '+nama+' ditambahkan ke menu!');
+        logActivity('Menu', 'Tambah produk: '+nama+' · Rp '+harga.toLocaleString('id'));
       }
       renderMenuMgmt();
-      const posGrid=document.getElementById('pos-menu-grid');if(posGrid)renderMenuGrid();
+      renderMenuGrid();
     }
   );
 }
@@ -7984,7 +8037,11 @@ function openEditProduk(id){const item=MENU.find(m=>m.id===id);if(item)openProdu
 function confirmHapusProduk(id){
   const item=MENU.find(m=>m.id===id);if(!item)return;
   openConfirm('Hapus Produk','"'+item.name+'" akan dihapus dari menu. Tidak bisa dibatalkan.','Hapus',()=>{
-    MENU.splice(MENU.indexOf(item),1);renderMenuMgmt();showToast('success',item.name+' dihapus dari menu');
+    MENU.splice(MENU.indexOf(item),1);
+    renderMenuMgmt();
+    renderMenuGrid();
+    showToast('success', item.name+' dihapus dari menu');
+    logActivity('Menu', 'Hapus produk: '+item.name);
   });
 }
 function openKaryawanModal(){
