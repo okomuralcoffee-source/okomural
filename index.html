@@ -3315,17 +3315,37 @@ async function hydrateUserFromSession(session) {
   <div id="po-empty" class="st-empty" style="display:none">Belum ada Purchase Order. Klik "+ Buat PO" untuk membuat.</div>
 </div>
 <div class="module" id="module-pricelist">
-  <div class="page-header"><div class="page-header-left"><h2>Material Pricelist Reference</h2><p>Referensi harga bahan baku per supplier</p></div>
-    <div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" onclick="exportData('pricelist')">Export</button><button class="btn btn-primary btn-sm" onclick="showToast('info','Form tambah harga referensi')">+ Harga</button></div>
+  <div class="page-header">
+    <div class="page-header-left"><h2>Material Pricelist Reference</h2><p id="pl-subtitle">Referensi harga bahan baku per supplier</p></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="exportPricelist()">↓ Export</button>
+      <button class="btn btn-primary btn-sm" onclick="openPricelistModal()">+ Harga</button>
+    </div>
+  </div>
+  <div class="stat-row-lg" style="margin-bottom:14px">
+    <div class="stat-card-lg"><div class="lbl">Total Material</div><div class="val" id="pl-kpi-total">0</div><div class="sub neu">Bahan terdaftar</div></div>
+    <div class="stat-card-lg"><div class="lbl">Supplier Unik</div><div class="val" id="pl-kpi-supplier">0</div><div class="sub neu">Sumber bahan</div></div>
+    <div class="stat-card-lg"><div class="lbl">Perlu Review</div><div class="val" id="pl-kpi-review" style="color:var(--amber)">0</div><div class="sub neu">Harga perlu dicek</div></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <input type="text" id="pl-search" placeholder="Cari bahan atau supplier..." oninput="renderPricelist()" style="flex:1;min-width:160px;padding:7px 12px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+    <select id="pl-filter-status" onchange="renderPricelist()" style="padding:7px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+      <option value="all">Semua Status</option>
+      <option value="aktif">Aktif</option>
+      <option value="review">Perlu Review</option>
+      <option value="nonaktif">Nonaktif</option>
+    </select>
   </div>
   <div class="table-wrap">
-    <div class="table-header"><h3>Daftar Harga Referensi</h3><div class="search-bar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--svg-icon-stroke)" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input placeholder="Cari bahan..."></div></div>
-    <table><thead><tr><th>Bahan Baku</th><th>Supplier</th><th>Harga</th><th>Satuan</th><th>Update</th><th>Status</th><th></th></tr></thead><tbody>
-      <tr><td style="font-weight:500">Kopi Robusta</td><td style="color:var(--text2)">CV Kopi Nusantara</td><td style="color:var(--text)">Rp 85.000</td><td>/kg</td><td style="color:var(--text3)">12 Agu</td><td><span class="badge badge-green">Aktif</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit harga')">Edit</button></td></tr>
-      <tr><td style="font-weight:500">Susu Full Cream</td><td style="color:var(--text2)">PT Dairy Fresh</td><td style="color:var(--text)">Rp 18.500</td><td>/liter</td><td style="color:var(--text3)">14 Agu</td><td><span class="badge badge-green">Aktif</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit harga')">Edit</button></td></tr>
-      <tr><td style="font-weight:500">Matcha Powder</td><td style="color:var(--text2)">Toko Matcha Asahi</td><td style="color:var(--text)">Rp 280.000</td><td>/kg</td><td style="color:var(--text3)">10 Agu</td><td><span class="badge badge-amber">Review</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit harga')">Edit</button></td></tr>
-      <tr><td style="font-weight:500">Sirup Vanilla</td><td style="color:var(--text2)">Distributor Torani</td><td style="color:var(--text)">Rp 95.000</td><td>/750ml</td><td style="color:var(--text3)">8 Agu</td><td><span class="badge badge-green">Aktif</span></td><td><button class="btn btn-secondary btn-sm" onclick="showToast('info','Edit harga')">Edit</button></td></tr>
-    </tbody></table>
+    <div class="table-header"><h3>Daftar Harga Referensi</h3><span id="pl-count" style="font-size:11px;color:var(--text3)"></span></div>
+    <table>
+      <thead><tr><th>Bahan Baku</th><th>Supplier</th><th style="text-align:right">Harga</th><th>Satuan</th><th>Catatan</th><th>Update</th><th>Status</th><th></th></tr></thead>
+      <tbody id="pl-tbody"><tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">Memuat data...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="adv-card" style="margin-top:16px">
+    <div class="adv-card-hd">📦 Material dengan Multiple Supplier</div>
+    <div id="pl-multi-supplier" style="margin-top:10px"></div>
   </div>
 </div>
 <!-- ══════════════════════════════════════════════════ -->
@@ -4204,6 +4224,7 @@ const LS_KEYS = {
   actlog:    'okomural_activity_log',
   attendance: 'okomural_attendance_db',
   opex:     'okomural_opex_db',
+  pricelist:'okomural_pricelist_db',
 };
 function lsSave(key, data){
   try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){ console.warn('lsSave error:', e); }
@@ -4216,6 +4237,15 @@ function lsLoad(key, fallback){
   return fallback;
 }
 // Load semua data dari localStorage saat startup (override defaults jika ada)
+// ── PRICELIST_DB: Referensi harga bahan baku per supplier ────────────────
+let PRICELIST_DB = [
+  {id:'PL-001', material:'Kopi Robusta',    supplier:'CV Kopi Nusantara',  harga:85000,  satuan:'kg',   updatedAt:'2026-08-12', status:'aktif', catatan:''},
+  {id:'PL-002', material:'Susu Full Cream', supplier:'PT Dairy Fresh',     harga:18500,  satuan:'liter',updatedAt:'2026-08-14', status:'aktif', catatan:''},
+  {id:'PL-003', material:'Matcha Powder',   supplier:'Toko Matcha Asahi',  harga:280000, satuan:'kg',   updatedAt:'2026-08-10', status:'review',catatan:'Harga naik dari 260rb'},
+  {id:'PL-004', material:'Sirup Vanilla',   supplier:'Distributor Torani', harga:95000,  satuan:'750ml',updatedAt:'2026-08-08', status:'aktif', catatan:''},
+];
+function savePRICELIST(){ lsSave(LS_KEYS.pricelist, PRICELIST_DB); }
+
 // ── OPEX_DB: Pengeluaran operasional (sewa, listrik, marketing, dll) ──────
 let OPEX_CATEGORIES = ['Sewa Tempat', 'Listrik & Air', 'Gaji & THR', 'Marketing', 'Perlengkapan', 'Transportasi', 'Perawatan & Servis', 'Lain-lain'];
 let OPEX_DB = []; // {id, date, kategori, keterangan, nominal, cabangId, kasir, createdAt}
@@ -4225,6 +4255,7 @@ function loadAllLocalData(){
   CABANG_DB     = lsLoad(LS_KEYS.cabang,   CABANG_DB);
   USER_DB       = lsLoad(LS_KEYS.users,    USER_DB);
   OPEX_DB       = lsLoad(LS_KEYS.opex,     OPEX_DB);
+  PRICELIST_DB  = lsLoad(LS_KEYS.pricelist, PRICELIST_DB);
   KARYAWAN_DB   = lsLoad(LS_KEYS.karyawan, KARYAWAN_DB);
   CAPEX_DB      = lsLoad(LS_KEYS.capex,    CAPEX_DB);
   capexIdCounter= CAPEX_DB.length + 1;
@@ -4840,7 +4871,7 @@ function showModule(mod){
     'capex-logs':renderCapexLogs,
     'capital-injection':renderCapitalInjection,
     'expenses': renderExpensesModule,
-    'pricelist':()=>{ if(typeof renderPricelist==='function') renderPricelist(); },
+    'pricelist': renderPricelist,
     'consignment': renderConsignment,
   };
   if(allRenders[mod]) setTimeout(allRenders[mod], 60);
@@ -11453,7 +11484,220 @@ async function saveKaryawanToSupabase(karyawan){
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
-// ── EXPENSES & OPEX — Full CRUD ───────────────────────────────────────────
+// ── MATERIAL PRICELIST — Full CRUD ────────────────────────────────────────
+
+function renderPricelist(){
+  const q      = (document.getElementById('pl-search')?.value||'').toLowerCase().trim();
+  const statusF= document.getElementById('pl-filter-status')?.value||'all';
+  const el     = id => document.getElementById(id);
+
+  // KPI
+  const uniqMaterials = [...new Set(PRICELIST_DB.map(p=>p.material))].length;
+  const uniqSuppliers = [...new Set(PRICELIST_DB.map(p=>p.supplier))].length;
+  const reviewCount   = PRICELIST_DB.filter(p=>p.status==='review').length;
+  if(el('pl-kpi-total'))    el('pl-kpi-total').textContent    = uniqMaterials;
+  if(el('pl-kpi-supplier')) el('pl-kpi-supplier').textContent = uniqSuppliers;
+  if(el('pl-kpi-review'))   el('pl-kpi-review').textContent   = reviewCount;
+  if(el('pl-subtitle'))     el('pl-subtitle').textContent     = PRICELIST_DB.length + ' entri harga · ' + uniqMaterials + ' bahan · ' + uniqSuppliers + ' supplier';
+
+  // Filter
+  let items = [...PRICELIST_DB].reverse();
+  if(q) items = items.filter(p =>
+    p.material.toLowerCase().includes(q) ||
+    p.supplier.toLowerCase().includes(q) ||
+    (p.catatan||'').toLowerCase().includes(q)
+  );
+  if(statusF !== 'all') items = items.filter(p => p.status === statusF);
+  if(el('pl-count')) el('pl-count').textContent = items.length + ' entri' + (q||statusF!=='all'?' (difilter)':'');
+
+  // Status badge
+  const statusBadge = s => s==='aktif'
+    ? '<span class="badge badge-green">Aktif</span>'
+    : s==='review'
+    ? '<span class="badge badge-amber">Review</span>'
+    : '<span class="badge badge-gray">Nonaktif</span>';
+
+  // Table
+  const tbody = el('pl-tbody');
+  if(tbody){
+    if(items.length === 0){
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">
+        ${q||statusF!=='all'?'Tidak ada entri yang cocok':'Belum ada harga referensi'}
+        <br><a href="#" onclick="openPricelistModal();return false" style="color:var(--green);font-size:11px;margin-top:6px;display:inline-block">+ Tambah entri harga</a>
+      </td></tr>`;
+    } else {
+      tbody.innerHTML = items.map(p => `<tr>
+        <td style="font-weight:500">${p.material}</td>
+        <td style="color:var(--text2)">${p.supplier}</td>
+        <td style="text-align:right;font-weight:600">Rp ${(p.harga||0).toLocaleString('id')}</td>
+        <td style="color:var(--text3)">/${p.satuan}</td>
+        <td style="color:var(--text3);font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.catatan||''}">${p.catatan||'—'}</td>
+        <td style="color:var(--text3);white-space:nowrap;font-size:11px">${p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('id-ID',{day:'2-digit',month:'short'}) : '—'}</td>
+        <td>${statusBadge(p.status)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" onclick="openPricelistModal('${p.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePricelist('${p.id}')" style="margin-left:4px">×</button>
+        </td>
+      </tr>`).join('');
+    }
+  }
+
+  // Multi-supplier section
+  const multiEl = el('pl-multi-supplier');
+  if(multiEl){
+    const byMaterial = {};
+    PRICELIST_DB.filter(p=>p.status!=='nonaktif').forEach(p=>{
+      if(!byMaterial[p.material]) byMaterial[p.material]=[];
+      byMaterial[p.material].push(p);
+    });
+    const multi = Object.entries(byMaterial).filter(([,arr])=>arr.length>1);
+    if(multi.length===0){
+      multiEl.innerHTML='<div style="font-size:11px;color:var(--text3);text-align:center;padding:12px">Belum ada bahan dengan multiple supplier</div>';
+    } else {
+      multiEl.innerHTML = multi.map(([mat, arr]) => {
+        const cheapest = arr.reduce((a,b)=>(a.harga<b.harga?a:b));
+        return `<div style="margin-bottom:12px;padding:10px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px">${mat}
+            <span style="font-size:10px;font-weight:400;color:var(--green);margin-left:6px">💡 Termurah: ${cheapest.supplier} @ Rp ${cheapest.harga.toLocaleString('id')}/${cheapest.satuan}</span>
+          </div>
+          ${arr.map(p=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);padding:3px 0;border-top:1px solid var(--border)">
+            <span>${p.supplier}</span>
+            <span style="font-weight:600${p===cheapest?';color:var(--green)':''}">Rp ${p.harga.toLocaleString('id')}/${p.satuan}</span>
+          </div>`).join('')}
+        </div>`;
+      }).join('');
+    }
+  }
+}
+
+function openPricelistModal(id){
+  const entry = id ? PRICELIST_DB.find(p=>p.id===id) : null;
+  const edit  = !!entry;
+  // Material options dari INV + PRICELIST_DB unik
+  const existingMaterials = [...new Set([...INV.map(i=>i.name), ...PRICELIST_DB.map(p=>p.material)])];
+  const matOptions = existingMaterials.map(m =>
+    `<option value="${m}"${entry?.material===m?' selected':''}>${m}</option>`
+  ).join('');
+  const unitOptions = ['gr','kg','ml','liter','pcs','loaf','750ml','btl','sak'].map(u=>
+    `<option value="${u}"${entry?.satuan===u?' selected':''}>${u}</option>`
+  ).join('');
+  const statusOptions = [['aktif','Aktif'],['review','Perlu Review'],['nonaktif','Nonaktif']].map(([v,l])=>
+    `<option value="${v}"${entry?.status===v?' selected':''}>${l}</option>`
+  ).join('');
+
+  openGModal(
+    edit ? 'Edit Harga Referensi' : 'Tambah Harga Referensi',
+    `<div class="gfield">
+      <label>Bahan Baku</label>
+      <div style="display:flex;gap:6px">
+        <select id="pl-mat-sel" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit" onchange="document.getElementById('pl-mat-new').style.display=this.value==='__new__'?'':'none'">
+          ${matOptions}
+          <option value="__new__">+ Bahan baru (ketik di bawah)</option>
+        </select>
+      </div>
+      <input id="pl-mat-new" type="text" placeholder="Nama bahan baru..." style="display:none;width:100%;margin-top:6px;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+    </div>
+    <div class="gfield">
+      <label>Supplier</label>
+      <input id="pl-sup" type="text" value="${entry?.supplier||''}" placeholder="Nama supplier/toko...">
+    </div>
+    <div class="gfield-row">
+      <div class="gfield">
+        <label>Harga (Rp)</label>
+        <input id="pl-harga" type="number" value="${entry?.harga||''}" placeholder="0" min="0">
+      </div>
+      <div class="gfield">
+        <label>Satuan</label>
+        <select id="pl-satuan" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          ${unitOptions}
+        </select>
+      </div>
+    </div>
+    <div class="gfield-row">
+      <div class="gfield">
+        <label>Tanggal Update</label>
+        <input id="pl-date" type="date" value="${entry?.updatedAt||new Date().toISOString().slice(0,10)}">
+      </div>
+      <div class="gfield">
+        <label>Status</label>
+        <select id="pl-status" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          ${statusOptions}
+        </select>
+      </div>
+    </div>
+    <div class="gfield">
+      <label>Catatan (opsional)</label>
+      <input id="pl-catatan" type="text" value="${entry?.catatan||''}" placeholder="Contoh: Harga naik dari bulan lalu...">
+    </div>`,
+    edit ? 'Simpan Perubahan' : 'Tambah Harga',
+    () => {
+      const matSel = document.getElementById('pl-mat-sel').value;
+      const mat    = matSel === '__new__'
+        ? (document.getElementById('pl-mat-new')?.value.trim()||'')
+        : matSel;
+      const sup    = document.getElementById('pl-sup').value.trim();
+      const harga  = parseInt(document.getElementById('pl-harga').value)||0;
+      const satuan = document.getElementById('pl-satuan').value;
+      const date   = document.getElementById('pl-date').value;
+      const status = document.getElementById('pl-status').value;
+      const cat    = document.getElementById('pl-catatan').value.trim();
+      if(!mat)  { showToast('error','Pilih atau ketik nama bahan'); return; }
+      if(!sup)  { showToast('error','Nama supplier wajib diisi'); return; }
+      if(harga<=0){ showToast('error','Harga harus lebih dari 0'); return; }
+      if(edit){
+        entry.material  = mat;
+        entry.supplier  = sup;
+        entry.harga     = harga;
+        entry.satuan    = satuan;
+        entry.updatedAt = date;
+        entry.status    = status;
+        entry.catatan   = cat;
+        showToast('success', mat + ' diperbarui', sup + ' · Rp ' + harga.toLocaleString('id') + '/' + satuan);
+        logActivity('Pricelist', 'Edit: ' + mat + ' @ ' + sup);
+      } else {
+        PRICELIST_DB.push({
+          id: 'PL-' + Date.now(),
+          material: mat, supplier: sup,
+          harga, satuan, updatedAt: date, status, catatan: cat,
+        });
+        showToast('success', mat + ' ditambahkan', sup + ' · Rp ' + harga.toLocaleString('id') + '/' + satuan);
+        logActivity('Pricelist', 'Tambah: ' + mat + ' @ ' + sup);
+      }
+      savePRICELIST();
+      renderPricelist();
+    }
+  );
+}
+
+function deletePricelist(id){
+  const entry = PRICELIST_DB.find(p=>p.id===id);
+  if(!entry) return;
+  openConfirm(
+    'Hapus Harga Referensi',
+    '"' + entry.material + '" dari ' + entry.supplier + ' akan dihapus.',
+    'Hapus',
+    () => {
+      PRICELIST_DB.splice(PRICELIST_DB.indexOf(entry),1);
+      savePRICELIST();
+      renderPricelist();
+      showToast('success', 'Entri dihapus');
+    }
+  );
+}
+
+function exportPricelist(){
+  const rows = [['Bahan Baku','Supplier','Harga','Satuan','Status','Update','Catatan']];
+  PRICELIST_DB.forEach(p => rows.push([p.material,p.supplier,p.harga,p.satuan,p.status,p.updatedAt,p.catatan||'']));
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'pricelist-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  showToast('success','Export berhasil','File CSV diunduh');
+}
+
+// ── MATERIAL PRICELIST END ─────────────────────────────────────────────────
+
 
 function renderExpensesModule(){
   const now     = new Date();
