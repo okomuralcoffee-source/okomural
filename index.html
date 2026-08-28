@@ -4950,17 +4950,21 @@ async function logStockAdjustmentToSupabase(item, oldQty, reason){
   }
   if(!matId){ console.warn('[Phase3] matId not found for adjustment:', item.name); return; }
   try {
+    const staffUUID = getStaffUUID();
+    if(!staffUUID){ console.warn('[Phase3] staffUUID null, skip adjustment log'); return; }
     const { error } = await supa
       .from('stock_adjustments')
       .insert({
-        material_id:  matId,
-        branch_id:    getBranchUUID(),
-        adjusted_by:  getStaffUUID(),
-        old_quantity: oldQty,
-        new_quantity: item.qty,
-        reason:       reason || 'Manual opname',
+        material_id: matId,
+        branch_id:   getBranchUUID(),
+        adjusted_by: staffUUID,
+        qty_before:  oldQty,
+        qty_after:   item.qty,
+        qty_diff:    item.qty - oldQty,
+        reason:      reason || 'Manual opname',
+        notes:       'Via OKOMURAL ERP — ' + item.name,
       });
-    if(error) console.warn('[Phase3] logAdjustment error:', error.message);
+    if(error) console.warn('[Phase3] logAdjustment error:', error.message, '| matId:', matId, '| branch:', getBranchUUID().slice(0,8));
     else console.log('[Phase3] Stock adjustment logged:', item.name, oldQty, '→', item.qty);
   } catch(e){
     console.warn('[Phase3] logAdjustment exception:', e.message);
