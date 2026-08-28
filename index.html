@@ -7240,6 +7240,38 @@ function doSplitCheckout(person){
   recordToShift(tx.total, tx.method, tx.hpp || 0);
   saveSESSION();
   rebuildFinanceFromSession();
+
+  // ── SUPABASE Phase 2.1: atomic_checkout untuk Split Bill ─────────────
+  const hasSupa = !!(currentUser?.supaAuthId && activeShift?.supaId);
+  if(hasSupa){
+    (async () => {
+      try {
+        const rpcItems = items.map(c => ({
+          product_id:       c.custom ? null : getProductUUID(c.id),
+          local_product_id: c.id || null,
+          product_name:     c.name,
+          quantity:         c.qty,
+          unit_price:       c.price,
+          hpp_per_unit:     calcHPP(c.id) || 0,
+        }));
+        const { data: saleId, error } = await supa.rpc('atomic_checkout', {
+          p_branch_id:      getBranchUUID(),
+          p_staff_id:       getStaffUUID(),
+          p_shift_id:       activeShift.supaId,
+          p_member_id:      null,
+          p_items:          rpcItems,
+          p_total_amount:   total,
+          p_subtotal:       total,
+          p_discount:       0,
+          p_hpp:            hpp,
+          p_payment_method: method,
+        });
+        if(error) console.warn('[Phase2.1] Split checkout Supabase error:', error.message);
+        else { tx.supaId = saleId; saveSESSION(); console.log('[Phase2.1] Split sale synced:', saleId); }
+      } catch(e){ console.warn('[Phase2.1] Split checkout exception:', e.message); }
+    })();
+  }
+
   // Remove person's items from cart
   const keepIndices = cart.map((_,i) => i).filter(i => (splitAssign[i]||1) !== person);
   cart = cart.filter((_,i) => keepIndices.includes(i));
@@ -9159,6 +9191,30 @@ function confirmBulkAdd(){
     }
     saveSESSION();
     rebuildFinanceFromSession();
+
+    // ── SUPABASE Phase 2.1: Bulk Order total → INSERT sales langsung ─────
+    const hasSupa = !!(currentUser?.supaAuthId && activeShift?.supaId);
+    if(hasSupa){
+      (async () => {
+        try {
+          const { data: saleId, error } = await supa.rpc('atomic_checkout', {
+            p_branch_id:      getBranchUUID(),
+            p_staff_id:       getStaffUUID(),
+            p_shift_id:       activeShift.supaId,
+            p_member_id:      null,
+            p_items:          [{ product_id: null, local_product_id: null, product_name: desc, quantity: 1, unit_price: amt, hpp_per_unit: 0 }],
+            p_total_amount:   amt,
+            p_subtotal:       amt,
+            p_discount:       0,
+            p_hpp:            0,
+            p_payment_method: _bulkPayMethod,
+          });
+          if(error) console.warn('[Phase2.1] Bulk total Supabase error:', error.message);
+          else { tx.supaId = saleId; saveSESSION(); console.log('[Phase2.1] Bulk sale synced:', saleId); }
+        } catch(e){ console.warn('[Phase2.1] Bulk total exception:', e.message); }
+      })();
+    }
+
     closeBulkModal();
     // Update riwayat badge
     syncShiftSidebar();
