@@ -5174,10 +5174,12 @@ function showModule(mod){
     },
     // 'purchase-orders' → handled by Override 2 (renderPOList)
     // 'sales-tracking'  → handled by Override 2 (setSalesDateRange → renderSalesTracking)
-    'settings':()=>{
+    'settings': async ()=>{
       renderSettingsCabang&&renderSettingsCabang();
-      renderSettingsUser&&renderSettingsUser();
       renderKuponList&&renderKuponList();
+      // Load users dari Supabase via Edge Function lalu render
+      if(typeof loadUsersFromSupabase === 'function') await loadUsersFromSupabase();
+      else if(typeof renderSettingsUser === 'function') renderSettingsUser();
     },
     'live-dashboard':renderLiveDashboard,
     'activity-log':  renderActivityLog,
