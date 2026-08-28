@@ -1431,39 +1431,50 @@ function getStaffUUID() {
 
 // ── initSupabaseAuth — dipanggil saat DOMContentLoaded ───────────────────
 async function initSupabaseAuth() {
-  try {
-    // Cek apakah ada session aktif (tab refresh / kembali ke tab)
-    const { data: { session }, error } = await supa.auth.getSession();
-    if (session) {
-      const ok = await hydrateUserFromSession(session);
-      if (ok) return; // langsung ke launcher
-    }
-  } catch(e) {
-    console.warn('Supabase getSession error:', e.message);
-  }
-
-  // Fallback: cek localStorage (offline/standalone mode)
+  // ── STEP 1: Cek localStorage DULU (instan, tidak perlu network) ──────
   try {
     const saved = localStorage.getItem('okomural_current_user');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && parsed.name && parsed.role) {
         currentUser = parsed;
-        // Restore activeShift jika ada
+        // Restore activeShift
         const cabId = activeBranch?.id || parsed.branchId || 'CAB-001';
-        const shiftKey = 'oko_shift_' + cabId;
         try {
-          const savedShift = localStorage.getItem(shiftKey);
+          const savedShift = localStorage.getItem('oko_shift_' + cabId);
           if(savedShift) activeShift = JSON.parse(savedShift);
         } catch(e2) {}
-        console.log('[Auth] Restored from localStorage:', parsed.name, '| shift:', activeShift?.id || 'none');
+        console.log('[Auth] ✅ Restored from localStorage:', parsed.name);
         goToLauncher();
+        // ── STEP 2: Refresh Supabase session di background (non-blocking) ──
+        supa.auth.getSession().then(({ data: { session } }) => {
+          if(session) {
+            currentUser.supaAuthId = session.user.id;
+            localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
+            console.log('[Auth] Supabase session refreshed in background');
+          }
+        }).catch(e => console.warn('[Auth] Background session refresh error:', e.message));
         return;
       }
     }
   } catch(e) { console.warn('[Auth] localStorage restore error:', e.message); }
 
-  console.log('[Auth] No session found, showing login');
+  // ── STEP 3: Tidak ada localStorage → coba Supabase getSession ────────
+  try {
+    const sessionPromise = supa.auth.getSession();
+    const timeoutPromise = new Promise(resolve =>
+      setTimeout(() => resolve({ data: { session: null } }), 3000)
+    );
+    const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+    if (session) {
+      const ok = await hydrateUserFromSession(session);
+      if (ok) { console.log('[Auth] ✅ Restored from Supabase session'); return; }
+    }
+  } catch(e) {
+    console.warn('[Auth] getSession error:', e.message);
+  }
+
+  console.log('[Auth] No session → show login');
   showScreen('login');
 }
 
