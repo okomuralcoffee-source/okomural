@@ -5173,7 +5173,10 @@ function showModule(mod){
     'capex-advisory':renderCapexAdvisory,
     'capex-logs':renderCapexLogs,
     'capital-injection':renderCapitalInjection,
-    'expenses': renderExpensesModule,
+    'expenses': async ()=>{
+      await loadExpensesFromSupabase();
+      renderExpensesModule();
+    },
     'pricelist': renderPricelist,
     'consignment': renderConsignment,
   };
@@ -12480,6 +12483,97 @@ function exportPricelist(){
 // ── MATERIAL PRICELIST END ─────────────────────────────────────────────────
 
 
+// ── PHASE 7: Finance → Supabase expenses ──────────────────────────────────
+
+// Cache expense_categories name → UUID
+let _expCatCache = {};
+
+async function loadExpenseCategoryCache(){
+  if(!currentUser?.supaAuthId) return;
+  if(Object.keys(_expCatCache).length > 0) return;
+  try {
+    const { data } = await supa.from('expense_categories').select('id, name');
+    if(data) data.forEach(c => { _expCatCache[c.name] = c.id; });
+    console.log('[Phase7] Expense category cache loaded:', Object.keys(_expCatCache).length);
+  } catch(e){ console.warn('[Phase7] loadExpenseCategoryCache error:', e.message); }
+}
+
+async function saveExpenseToSupabase(entry, isEdit){
+  if(!currentUser?.supaAuthId) return null;
+  await loadExpenseCategoryCache();
+  const catId = _expCatCache[entry.kategori] || null;
+  const staffId = getStaffUUID();
+  if(!staffId){ console.warn('[Phase7] staffId null, skip expense save'); return null; }
+  try {
+    if(isEdit && entry.supaId){
+      const { error } = await supa.from('expenses').update({
+        category_id:  catId,
+        amount:       entry.nominal,
+        description:  entry.keterangan,
+        expense_date: entry.date || null,
+        branch_id:    BRANCH_LOCAL_TO_UUID[entry.cabangId] || getBranchUUID(),
+      }).eq('id', entry.supaId);
+      if(error) console.warn('[Phase7] update expense error:', error.message);
+      else console.log('[Phase7] Expense updated:', entry.supaId?.slice(0,8));
+      return entry.supaId;
+    } else {
+      const { data, error } = await supa.from('expenses').insert({
+        branch_id:    BRANCH_LOCAL_TO_UUID[entry.cabangId] || getBranchUUID(),
+        category_id:  catId,
+        recorded_by:  staffId,
+        amount:       entry.nominal,
+        description:  entry.keterangan,
+        expense_date: entry.date || null,
+      }).select('id').single();
+      if(error){ console.warn('[Phase7] insert expense error:', error.message); return null; }
+      console.log('[Phase7] Expense saved:', data?.id?.slice(0,8));
+      return data?.id;
+    }
+  } catch(e){ console.warn('[Phase7] saveExpenseToSupabase error:', e.message); return null; }
+}
+
+async function deleteExpenseFromSupabase(supaId){
+  if(!currentUser?.supaAuthId || !supaId) return;
+  try {
+    const { error } = await supa.from('expenses').delete().eq('id', supaId);
+    if(error) console.warn('[Phase7] delete expense error:', error.message);
+    else console.log('[Phase7] Expense deleted:', supaId?.slice(0,8));
+  } catch(e){ console.warn('[Phase7] deleteExpenseFromSupabase error:', e.message); }
+}
+
+async function loadExpensesFromSupabase(){
+  if(!currentUser?.supaAuthId) return;
+  try {
+    const now = new Date();
+    const monthStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    const { data, error } = await supa
+      .from('expenses')
+      .select('id, amount, description, expense_date, branch_id, expense_categories(name)')
+      .gte('expense_date', monthStr + '-01')
+      .order('expense_date', { ascending: false });
+    if(error){ console.warn('[Phase7] loadExpenses error:', error.message); return; }
+    if(!data || data.length === 0) return;
+    let added = 0;
+    data.forEach(row => {
+      if(OPEX_DB.find(e => e.supaId === row.id)) return;
+      const branchLocal = Object.entries(BRANCH_LOCAL_TO_UUID).find(([,v]) => v === row.branch_id)?.[0] || 'CAB-001';
+      OPEX_DB.push({
+        id:          'OPX-SUPA-' + row.id.slice(0,8),
+        supaId:      row.id,
+        kategori:    row.expense_categories?.name || 'Lain-lain',
+        keterangan:  row.description || '',
+        nominal:     parseFloat(row.amount) || 0,
+        date:        row.expense_date || '',
+        cabangId:    branchLocal,
+        kasir:       '—',
+        createdAt:   row.expense_date,
+      });
+      added++;
+    });
+    if(added > 0){ saveOPEX(); console.log('[Phase7] Loaded', added, 'expenses from Supabase'); }
+  } catch(e){ console.warn('[Phase7] loadExpensesFromSupabase error:', e.message); }
+}
+
 function renderExpensesModule(){
   const now     = new Date();
   const todayStr= now.toISOString().slice(0,10);
@@ -12625,6 +12719,8 @@ function openOpexModal(id){
         entry.cabangId   = cab;
         showToast('success', 'Pengeluaran diperbarui', kat + ' · ' + 'Rp ' + nom.toLocaleString('id'));
         logActivity('OPEX', 'Edit: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
+        // ── SUPABASE Phase 7: update ─────────────────────────────────────
+        saveExpenseToSupabase(entry, true);
       } else {
         const newEntry = {
           id:          'OPX-' + Date.now(),
@@ -12639,6 +12735,10 @@ function openOpexModal(id){
         OPEX_DB.push(newEntry);
         showToast('success', 'Pengeluaran dicatat', kat + ' · Rp ' + nom.toLocaleString('id'));
         logActivity('OPEX', 'Catat: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
+        // ── SUPABASE Phase 7: catat baru ─────────────────────────────────
+        saveExpenseToSupabase(newEntry, false).then(supaId => {
+          if(supaId){ newEntry.supaId = supaId; saveOPEX(); }
+        });
       }
       saveOPEX();
       renderExpensesModule();
@@ -12659,6 +12759,8 @@ function deleteOpex(id){
       renderExpensesModule();
       showToast('success', 'Pengeluaran dihapus');
       logActivity('OPEX', 'Hapus: ' + entry.keterangan);
+      // ── SUPABASE Phase 7 ────────────────────────────────────────────
+      if(entry.supaId) deleteExpenseFromSupabase(entry.supaId);
     }
   );
 }
@@ -12765,24 +12867,7 @@ async function loadSalesAggregateFromSupabase(dateFrom, dateTo){
   } catch(e){ console.warn('loadSalesAggregateFromSupabase error:', e); return null; }
 }
 // Save expense → INSERT expenses
-async function saveExpenseToSupabase(expense){
-  if(!currentUser?.branch_id) return null;
-  try {
-    const { data, error } = await supa
-      .from('expenses')
-      .insert({
-        branch_id:   currentUser.branch_id,
-        category_id: expense.categoryId || null,
-        amount:      expense.amount,
-        description: expense.description || '',
-        expense_date: expense.date || new Date().toISOString().slice(0,10),
-        created_by:  currentUser.id || null
-      })
-      .select('id').single();
-    if(error){ console.warn('Expense insert error:', error.message); return null; }
-    return data.id;
-  } catch(e){ console.warn('saveExpenseToSupabase error:', e); return null; }
-}
+// saveExpenseToSupabase moved to Phase 7 section above
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 8 — SETTINGS
    Branches + system_config → Supabase
