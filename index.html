@@ -1105,7 +1105,7 @@ tr:hover td{background:var(--bg2)}
 .toggle-track::before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:transform .2s,background .2s}
 .toggle-sw input:checked + .toggle-track{background:#1a3a28;border-color:var(--green)}
 .toggle-sw input:checked + .toggle-track::before{transform:translateX(14px);background:var(--green)}
-.attendance-grid{display:grid;grid-template-columns:1fr 280px;gap:14px}
+.attendance-grid{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start}
 @media(max-width:900px){.attendance-grid{grid-template-columns:1fr}}
 .attendance-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:640px){.attendance-summary{grid-template-columns:repeat(2,1fr)}}
@@ -1113,12 +1113,12 @@ tr:hover td{background:var(--bg2)}
 .att-stat-num{font-size:20px;font-weight:700;letter-spacing:-.5px;margin-bottom:2px}
 .att-stat-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
 .att-stat.hadir .att-stat-num{color:var(--green)}.att-stat.izin .att-stat-num{color:var(--amber)}.att-stat.alpha .att-stat-num{color:var(--red)}.att-stat.libur .att-stat-num{color:var(--text3)}
-.calendar-wrap{background:var(--bg1);border:1px solid var(--border);border-radius:2px;padding:14px;margin-bottom:14px}
+.calendar-wrap{background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;display:inline-block}
 .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
 .cal-header h3{font-size:12px;font-weight:600}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.cal-day-label{text-align:center;font-size:10px;color:var(--text3);padding:4px 0;text-transform:uppercase;letter-spacing:.5px}
-.cal-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:2px;cursor:pointer;position:relative;font-size:11px;color:var(--text2);transition:background .12s}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;max-width:320px}
+.cal-day-label{text-align:center;font-size:9px;color:var(--text3);padding:3px 0;text-transform:uppercase;letter-spacing:.3px}
+.cal-day{width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;position:relative;font-size:11px;color:var(--text2);transition:background .12s}
 .cal-day:hover:not(.empty){background:var(--bg2)}.cal-day.empty{cursor:default}
 .cal-day.today{background:var(--bg2);color:var(--accent);font-weight:700;border:1px solid var(--border2)}
 .cal-day.hadir::after,.cal-day.izin::after,.cal-day.alpha::after{content:'';position:absolute;bottom:3px;width:4px;height:4px;border-radius:50%}
@@ -2590,41 +2590,73 @@ async function hydrateUserFromSession(session) {
 <!-- ATTENDANCE -->
 <div class="module" id="module-attendance">
   <div class="page-header">
-    <div class="page-header-left"><h2>Absensi Karyawan</h2><p>Agustus 2025</p></div>
-    <div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" onclick="exportData('absensi')">Export</button><button class="btn btn-primary btn-sm" onclick="showToast('info','Gunakan form di bawah','Isi form input absensi manual.')">+ Manual</button></div>
+    <div class="page-header-left"><h2>Absensi Karyawan</h2><p id="att-subtitle">Rekap absensi bulan ini</p></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="exportData('absensi')">↓ Export</button>
+      <button class="btn btn-primary btn-sm" onclick="openManualAttModal()">+ Manual</button>
+    </div>
   </div>
-  <div class="attendance-summary">
-    <div class="att-stat hadir"><div class="att-stat-num">14</div><div class="att-stat-label">Hadir</div></div>
-    <div class="att-stat izin"><div class="att-stat-num">2</div><div class="att-stat-label">Izin</div></div>
-    <div class="att-stat alpha"><div class="att-stat-num">0</div><div class="att-stat-label">Alpha</div></div>
-    <div class="att-stat libur"><div class="att-stat-num">3</div><div class="att-stat-label">Libur</div></div>
+
+  <!-- Summary bar compact -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
+      <span style="font-size:12px;font-weight:600" id="att-sum-hadir">0</span>
+      <span style="font-size:11px;color:var(--text3)">Hadir</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--amber)"></div>
+      <span style="font-size:12px;font-weight:600" id="att-sum-izin">0</span>
+      <span style="font-size:11px;color:var(--text3)">Izin/Sakit</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--red)"></div>
+      <span style="font-size:12px;font-weight:600" id="att-sum-alpha">0</span>
+      <span style="font-size:11px;color:var(--text3)">Alpha</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--text3)"></div>
+      <span style="font-size:12px;font-weight:600" id="att-sum-libur">0</span>
+      <span style="font-size:11px;color:var(--text3)">Libur</span>
+    </div>
+    <!-- Karyawan selector -->
+    <select id="att-karyawan-sel" onchange="renderAttendanceModule()" style="margin-left:auto;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">
+      <option value="all">Semua Karyawan</option>
+    </select>
   </div>
+
+  <!-- Layout: mini calendar kiri + log tabel kanan -->
   <div class="attendance-grid">
+    <!-- Kiri: mini calendar -->
     <div>
       <div class="calendar-wrap">
-        <div class="cal-header"><h3>Agustus 2025 — Dewi Sartika</h3></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <button onclick="changeAttMonth(-1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 4px">‹</button>
+          <div style="font-size:12px;font-weight:600" id="att-cal-header">Agustus 2026</div>
+          <button onclick="changeAttMonth(1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 4px">›</button>
+        </div>
         <div class="cal-grid" id="calendar-grid"></div>
-        <div class="cal-legend">
-          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Hadir</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Izin</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Alpha</div>
+        <div class="cal-legend" style="margin-top:8px;display:flex;gap:10px;font-size:10px;color:var(--text3)">
+          <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:3px"></span>Hadir</span>
+          <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:3px"></span>Izin</span>
+          <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:3px"></span>Alpha</span>
         </div>
       </div>
-      <div class="log-card">
-        <h3>Log Hari Ini</h3>
-        <div class="log-entry"><div class="log-entry-dot"></div><div class="log-entry-info"><div class="log-entry-name">Dewi Sartika</div><div class="log-entry-detail">Manajer · Clock-in</div></div><div class="log-entry-time">08:12</div></div>
-        <div class="log-entry"><div class="log-entry-dot"></div><div class="log-entry-info"><div class="log-entry-name">Rizki Pratama</div><div class="log-entry-detail">Kasir · Buka shift</div></div><div class="log-entry-time">08:01</div></div>
-        <div class="log-entry"><div class="log-entry-dot izin"></div><div class="log-entry-info"><div class="log-entry-name">Anisa Nurul</div><div class="log-entry-detail">Barista · Izin sakit</div></div><div class="log-entry-time">—</div></div>
-      </div>
     </div>
+
+    <!-- Kanan: log tabel -->
     <div>
-      <div class="manual-att">
-        <h3>Input Absensi Manual</h3>
-        <div class="form-row"><div class="form-label">Karyawan</div><select class="form-select"><option>Pilih karyawan...</option><option>Dewi Sartika</option><option>Rizki Pratama</option><option>Anisa Nurul</option></select></div>
-        <div class="form-row"><div class="form-label">Tanggal</div><input class="form-input" type="date" value="2025-08-14"></div>
-        <div class="form-row"><div class="form-label">Status</div><select class="form-select"><option>Hadir</option><option>Izin</option><option>Sakit</option><option>Alpha</option></select></div>
-        <div class="form-row"><div class="form-label">Catatan</div><input class="form-input" placeholder="Keterangan..."></div>
-        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px" onclick="showToast('success','Absensi disimpan')">Simpan</button>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3 id="att-table-title">Log Absensi</h3>
+          <input type="text" id="att-search" placeholder="Cari nama..." oninput="renderAttendanceModule()" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;width:160px">
+        </div>
+        <table>
+          <thead><tr><th>Tanggal</th><th>Karyawan</th><th>Status</th><th>Catatan</th><th></th></tr></thead>
+          <tbody id="att-log-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -2725,14 +2757,98 @@ async function hydrateUserFromSession(session) {
         <button class="btn btn-primary btn-sm" onclick="openTambahUser()">+ Tambah User</button>
       </div>
       <div id="settings-loyalitas" style="display:none">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px">Program Loyalitas</div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="gfield"><label>Kelipatan Poin (Rp per 1 poin)</label><input type="number" value="1000"></div>
-          <div class="gfield"><label>Nilai Tukar (poin ke Rupiah)</label><input type="number" value="50"></div>
-          <div class="gfield"><label>Threshold Silver (Rp)</label><input type="number" value="500000"></div>
-          <div class="gfield"><label>Threshold Gold (Rp)</label><input type="number" value="2000000"></div>
-          <button class="btn btn-primary btn-sm" style="align-self:flex-start" onclick="saveSettingsLoyalitas()">Simpan Perubahan</button>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">🏆 Program Loyalitas & Tier</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:18px">Konfigurasi konversi poin, nilai redeem, dan threshold naik tier</div>
+
+        <!-- Konversi Poin -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Konversi Poin</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+          <div class="gfield">
+            <label>Kelipatan Belanja (Rp) = 1 Poin</label>
+            <input type="number" id="loy-points-per-idr" min="100" step="100" placeholder="1000">
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">Contoh: 1000 → Rp 1.000 belanja = 1 poin</div>
+          </div>
+          <div class="gfield">
+            <label>Nilai Redeem: X Poin = Rp 1.000</label>
+            <input type="number" id="loy-points-to-idr" min="1" step="1" placeholder="100">
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">Contoh: 100 → 100 poin = Rp 1.000</div>
+          </div>
+          <div class="gfield">
+            <label>Minimum Poin untuk Redeem</label>
+            <input type="number" id="loy-min-redeem" min="1" step="10" placeholder="100">
+          </div>
         </div>
+
+        <!-- Tier Configuration -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Konfigurasi Tier</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
+          <!-- Regular -->
+          <div style="padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;font-weight:700">⬜ Regular</span>
+              <span style="font-size:10px;color:var(--text3)">Tier dasar semua member baru</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="gfield" style="margin:0">
+                <label>Min. Belanja (Rp)</label>
+                <input type="number" id="loy-regular-min" value="0" disabled style="opacity:.5">
+              </div>
+              <div class="gfield" style="margin:0">
+                <label>Multiplier Poin</label>
+                <input type="number" id="loy-regular-mult" min="0.5" max="5" step="0.1" placeholder="1">
+              </div>
+            </div>
+          </div>
+          <!-- Silver -->
+          <div style="padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;font-weight:700;color:#aaa">🥈 Silver</span>
+              <span style="font-size:10px;color:var(--text3)">Naik dari Regular saat mencapai threshold</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <div class="gfield" style="margin:0">
+                <label>Min. Belanja (Rp)</label>
+                <input type="number" id="loy-silver-min" min="0" step="50000" placeholder="500000">
+              </div>
+              <div class="gfield" style="margin:0">
+                <label>Diskon Otomatis (%)</label>
+                <input type="number" id="loy-silver-disc" min="0" max="50" step="1" placeholder="5">
+              </div>
+              <div class="gfield" style="margin:0">
+                <label>Multiplier Poin</label>
+                <input type="number" id="loy-silver-mult" min="0.5" max="5" step="0.1" placeholder="1.5">
+              </div>
+            </div>
+          </div>
+          <!-- Gold -->
+          <div style="padding:12px;background:var(--bg2);border:1px solid var(--amber-dim,rgba(239,159,39,.15));border-radius:6px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;font-weight:700;color:var(--amber)">🥇 Gold</span>
+              <span style="font-size:10px;color:var(--text3)">Tier tertinggi — benefit eksklusif</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <div class="gfield" style="margin:0">
+                <label>Min. Belanja (Rp)</label>
+                <input type="number" id="loy-gold-min" min="0" step="100000" placeholder="2000000">
+              </div>
+              <div class="gfield" style="margin:0">
+                <label>Diskon Otomatis (%)</label>
+                <input type="number" id="loy-gold-disc" min="0" max="50" step="1" placeholder="10">
+              </div>
+              <div class="gfield" style="margin:0">
+                <label>Multiplier Poin</label>
+                <input type="number" id="loy-gold-mult" min="0.5" max="5" step="0.1" placeholder="2">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview kalkulasi -->
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;font-size:11px;color:var(--text3);margin-bottom:16px" id="loy-preview">
+          💡 Simulasi: Belanja Rp 150.000 → <span id="loy-sim-regular">150 poin (Regular)</span> · <span id="loy-sim-silver">225 poin (Silver)</span> · <span id="loy-sim-gold">300 poin (Gold)</span>
+        </div>
+
+        <button class="btn btn-primary btn-sm" onclick="saveLoyalitasConfig()">💾 Simpan Konfigurasi</button>
       </div>
       <div id="settings-payment" style="display:none">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">Metode Pembayaran</div>
@@ -4201,7 +4317,18 @@ let STRUK_CONFIG = {
   autoPrint: false,    // auto print struk setelah checkout tanpa klik manual
   paperWidth: '80mm',  // '58mm' atau '80mm' sesuai mesin thermal
 };
-let LOYALTY_CONFIG = { pointsPerIdr: 1000, pointsToRupiah: 100, minRedeem: 100 };
+let LOYALTY_CONFIG = {
+  pointsPerIdr: 1000,   // Rp 1.000 belanja = 1 poin
+  pointsToIdr:  100,    // 100 poin = Rp 1.000 (saat redeem)
+  minRedeem:    100,    // minimum poin untuk redeem
+  regularMult:  1,      // multiplier poin Regular
+  silverMin:    500000, // min. belanja untuk tier Silver (Rp)
+  silverDisc:   0.05,   // diskon otomatis Silver (5%)
+  silverMult:   1.5,    // multiplier poin Silver
+  goldMin:      2000000,// min. belanja untuk tier Gold (Rp)
+  goldDisc:     0.10,   // diskon otomatis Gold (10%)
+  goldMult:     2,      // multiplier poin Gold
+};
 let SESSION = {
   transactions: [],   // semua transaksi POS sesi ini
   opnameLogs: [],     // log opname inventory
@@ -4394,19 +4521,22 @@ let CRM_MEMBERS = [
 ];
 let activeMember = null; // member yang sedang di-scan di POS
 function getTier(totalSpend){
-  if(totalSpend>=2000000) return 'gold';
-  if(totalSpend>=500000) return 'silver';
+  const lc = LOYALTY_CONFIG;
+  if(totalSpend>=(lc.goldMin||2000000))   return 'gold';
+  if(totalSpend>=(lc.silverMin||500000))  return 'silver';
   return 'regular';
 }
 function getTierDiscount(tier){
-  if(tier==='gold') return 0.10;
-  if(tier==='silver') return 0.05;
+  const lc = LOYALTY_CONFIG;
+  if(tier==='gold')   return lc.goldDisc   ?? 0.10;
+  if(tier==='silver') return lc.silverDisc ?? 0.05;
   return 0;
 }
 function getPointMultiplier(tier){
-  if(tier==='gold') return 2;
-  if(tier==='silver') return 1.5;
-  return 1;
+  const lc = LOYALTY_CONFIG;
+  if(tier==='gold')   return lc.goldMult   ?? 2;
+  if(tier==='silver') return lc.silverMult ?? 1.5;
+  return lc.regularMult ?? 1;
 }
 function isMobile(){return window.innerWidth<=640}
 function showScreen(id){
@@ -4845,7 +4975,7 @@ function showModule(mod){
   const allRenders={
     'inventory':renderInventory,
     'menu':renderMenuMgmt,
-    'attendance':renderCalendar,
+    'attendance': renderAttendanceModule,
     'finance':renderCashRecon,
     'hr':renderHRTable,
     'crm': async () => {
@@ -5281,17 +5411,61 @@ const SUPABASE_ROADMAP = {
 ══════════════════════════════════════════════════ */
 /* ── NAV GROUP TOGGLE ── */
 function toggleNavGroup(hd){const body=hd.nextElementSibling,chev=hd.querySelector('.nav-chevron');body.classList.toggle('collapsed');chev.classList.toggle('collapsed')}
-function saveSettingsLoyalitas(){
-  const inputs=document.querySelectorAll('#settings-loyalitas input[type="number"]');
-  if(inputs.length>=4){
-    SETTINGS_LOYALITAS.pointPer1000=parseInt(inputs[0].value)||1;
-    SETTINGS_LOYALITAS.redeemPer100=parseInt(inputs[1].value)||5000;
-    SETTINGS_LOYALITAS.threshSilver=parseInt(inputs[2].value)||500000;
-    SETTINGS_LOYALITAS.threshGold=parseInt(inputs[3].value)||2000000;
-  }
-  saveLOYALTY();
-  showToast('success','Pengaturan loyalitas disimpan');
+function loadLoyalitasPanel(){
+  const lc = LOYALTY_CONFIG;
+  const el = id => document.getElementById(id);
+  if(el('loy-points-per-idr')) el('loy-points-per-idr').value = lc.pointsPerIdr || 1000;
+  if(el('loy-points-to-idr')) el('loy-points-to-idr').value = lc.pointsToIdr || 100;
+  if(el('loy-min-redeem'))    el('loy-min-redeem').value    = lc.minRedeem || 100;
+  if(el('loy-regular-mult'))  el('loy-regular-mult').value  = lc.regularMult || 1;
+  if(el('loy-silver-min'))    el('loy-silver-min').value    = lc.silverMin || 500000;
+  if(el('loy-silver-disc'))   el('loy-silver-disc').value   = (lc.silverDisc||0.05)*100;
+  if(el('loy-silver-mult'))   el('loy-silver-mult').value   = lc.silverMult || 1.5;
+  if(el('loy-gold-min'))      el('loy-gold-min').value      = lc.goldMin || 2000000;
+  if(el('loy-gold-disc'))     el('loy-gold-disc').value     = (lc.goldDisc||0.10)*100;
+  if(el('loy-gold-mult'))     el('loy-gold-mult').value     = lc.goldMult || 2;
+  updateLoyaltiasPreview();
 }
+
+function updateLoyaltiasPreview(){
+  const perIdr = parseInt(document.getElementById('loy-points-per-idr')?.value)||1000;
+  const rMult  = parseFloat(document.getElementById('loy-regular-mult')?.value)||1;
+  const sMult  = parseFloat(document.getElementById('loy-silver-mult')?.value)||1.5;
+  const gMult  = parseFloat(document.getElementById('loy-gold-mult')?.value)||2;
+  const sample = 150000;
+  const base   = Math.floor(sample/perIdr);
+  const el = id => document.getElementById(id);
+  if(el('loy-sim-regular')) el('loy-sim-regular').textContent = Math.floor(base*rMult)+' poin (Regular)';
+  if(el('loy-sim-silver'))  el('loy-sim-silver').textContent  = Math.floor(base*sMult)+' poin (Silver)';
+  if(el('loy-sim-gold'))    el('loy-sim-gold').textContent    = Math.floor(base*gMult)+' poin (Gold)';
+}
+
+function saveLoyalitasConfig(){
+  const g = id => document.getElementById(id);
+  const ppi   = parseInt(g('loy-points-per-idr')?.value)||1000;
+  const pti   = parseInt(g('loy-points-to-idr')?.value)||100;
+  const minR  = parseInt(g('loy-min-redeem')?.value)||100;
+  const rMult = parseFloat(g('loy-regular-mult')?.value)||1;
+  const sMin  = parseInt(g('loy-silver-min')?.value)||500000;
+  const sDisc = (parseFloat(g('loy-silver-disc')?.value)||5)/100;
+  const sMult = parseFloat(g('loy-silver-mult')?.value)||1.5;
+  const gMin  = parseInt(g('loy-gold-min')?.value)||2000000;
+  const gDisc = (parseFloat(g('loy-gold-disc')?.value)||10)/100;
+  const gMult = parseFloat(g('loy-gold-mult')?.value)||2;
+  if(sMin >= gMin){ showToast('error','Threshold Silver harus lebih kecil dari Gold'); return; }
+  Object.assign(LOYALTY_CONFIG, {
+    pointsPerIdr: ppi, pointsToIdr: pti, minRedeem: minR,
+    regularMult: rMult,
+    silverMin: sMin, silverDisc: sDisc, silverMult: sMult,
+    goldMin: gMin,   goldDisc: gDisc,   goldMult: gMult,
+  });
+  saveLOYALTY();
+  updateLoyaltiasPreview();
+  showToast('success','Konfigurasi loyalitas disimpan','Berlaku untuk semua transaksi berikutnya');
+  logActivity('Settings','Update konfigurasi loyalitas & tier');
+}
+// Override saveSettingsLoyalitas for backward compat
+function saveSettingsLoyalitas(){ saveLoyalitasConfig(); }
 /* openPOModal old removed */
 function filterPOTab(el){document.querySelectorAll('.po-tab').forEach(t=>t.classList.remove('active'));el.classList.add('active')}
 /* ══════════════════════════════════════════════════
@@ -7922,7 +8096,192 @@ function toggleMenuAvailable(id, val){
   showToast(val?'success':'info', item.name, val?'Produk diaktifkan':'Produk dinonaktifkan');
 }
 function renderBarChart(){const data=[{d:'Sen',v:3800},{d:'Sel',v:4200},{d:'Rab',v:3600},{d:'Kam',v:5100},{d:'Jum',v:6200},{d:'Sab',v:7400},{d:'Min',v:4200}],max=Math.max(...data.map(d=>d.v));const _bc=document.getElementById('bar-chart');if(!_bc)return;_bc.innerHTML=data.map(d=>'<div class="bar-day"><div class="bar-fill" style="height:'+Math.round((d.v/max)*100)+'%" title="Rp '+d.v.toLocaleString('id')+'"></div><div class="bar-day-label">'+d.d+'</div></div>').join('')}
-function renderCalendar(){const DL=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];let html=DL.map(d=>'<div class="cal-day-label">'+d+'</div>').join('');for(let i=0;i<5;i++)html+='<div class="cal-day empty"></div>';for(let d=1;d<=31;d++){const st=ATT_DATA[d]||'',cls=['cal-day',d===14?'today':'',st,!st&&((d+4)%7===0||(d+4)%7===6)?'libur':''].filter(Boolean).join(' ');html+='<div class="'+cls+'">'+d+'</div>'}document.getElementById('calendar-grid').innerHTML=html}
+// ── C4: ATTENDANCE MODULE — Compact Calendar + Live Table ─────────────────
+let _attViewMonth = new Date().getMonth();
+let _attViewYear  = new Date().getFullYear();
+
+function changeAttMonth(dir){
+  _attViewMonth += dir;
+  if(_attViewMonth > 11){ _attViewMonth = 0; _attViewYear++; }
+  if(_attViewMonth < 0) { _attViewMonth = 11; _attViewYear--; }
+  renderAttendanceModule();
+}
+
+function renderCalendar(){ renderAttendanceModule(); } // backward compat
+
+function renderAttendanceModule(){
+  const selEl  = document.getElementById('att-karyawan-sel');
+  const q      = (document.getElementById('att-search')?.value||'').toLowerCase().trim();
+  const selKar = selEl?.value || 'all';
+
+  // Populate karyawan selector
+  if(selEl && selEl.options.length <= 1){
+    KARYAWAN_DB.forEach(k => {
+      const o = document.createElement('option');
+      o.value = k.id; o.textContent = k.nama;
+      selEl.appendChild(o);
+    });
+  }
+
+  // Build attendance map dari ATTENDANCE_DB
+  const yr = _attViewYear, mo = _attViewMonth;
+  const monthStr = yr + '-' + String(mo+1).padStart(2,'0');
+  const monthName = new Date(yr, mo, 1).toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+  const daysInMonth = new Date(yr, mo+1, 0).getDate();
+  const firstDay    = new Date(yr, mo, 1).getDay(); // 0=Sun
+
+  // Header
+  const headerEl = document.getElementById('att-cal-header');
+  if(headerEl) headerEl.textContent = monthName;
+
+  // Filter log entries for this month
+  const monthLogs = ATTENDANCE_DB.filter(e => (e.date||'').startsWith(monthStr));
+  const filteredLogs = monthLogs.filter(e => {
+    if(selKar !== 'all' && e.karyawanId !== selKar) return false;
+    if(q && !(e.nama||'').toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  // Summary counts
+  const allMonthLogs = monthLogs; // untuk summary semua karyawan
+  const hadir = allMonthLogs.filter(e=>e.status==='hadir').length;
+  const izin  = allMonthLogs.filter(e=>e.status==='izin'||e.status==='sakit').length;
+  const alpha = allMonthLogs.filter(e=>e.status==='alpha').length;
+  const libur = allMonthLogs.filter(e=>e.status==='libur').length;
+  const el = id => document.getElementById(id);
+  if(el('att-sum-hadir')) el('att-sum-hadir').textContent = hadir;
+  if(el('att-sum-izin'))  el('att-sum-izin').textContent  = izin;
+  if(el('att-sum-alpha')) el('att-sum-alpha').textContent  = alpha;
+  if(el('att-sum-libur')) el('att-sum-libur').textContent  = libur;
+  if(el('att-subtitle'))  el('att-subtitle').textContent   = monthName + ' · ' + allMonthLogs.length + ' entri';
+
+  // Calendar grid
+  const calGrid = el('calendar-grid');
+  if(calGrid){
+    const DL = ['M','S','S','R','K','J','S']; // Min Sen Sel Rab Kam Jum Sab compact
+    let html = DL.map(d=>`<div class="cal-day-label">${d}</div>`).join('');
+    // Empty cells for first day (0=Sun → 0 empty if firstDay=0, but we start Monday)
+    const offset = firstDay === 0 ? 6 : firstDay - 1; // Mon=0
+    for(let i=0;i<offset;i++) html += '<div class="cal-day empty"></div>';
+
+    // Build daily status map (combine all karyawan for dot color)
+    const dayStatus = {};
+    monthLogs.forEach(e => {
+      const d = parseInt((e.date||'').slice(8,10));
+      if(!dayStatus[d] || e.status==='hadir') dayStatus[d] = e.status;
+    });
+
+    const today = new Date();
+    for(let d=1;d<=daysInMonth;d++){
+      const isToday = today.getFullYear()===yr && today.getMonth()===mo && today.getDate()===d;
+      const st = dayStatus[d]||'';
+      const dotColor = st==='hadir'?'var(--green)':st==='alpha'?'var(--red)':st==='izin'||st==='sakit'?'var(--amber)':'';
+      html += `<div class="cal-day${isToday?' today':''}" title="${d} ${monthName}${st?' · '+st:''}">
+        ${d}
+        ${dotColor?`<div style="position:absolute;bottom:2px;width:4px;height:4px;border-radius:50%;background:${dotColor}"></div>`:''}
+      </div>`;
+    }
+    calGrid.innerHTML = html;
+  }
+
+  // Log tabel
+  const tbody = el('att-log-tbody');
+  const titleEl = el('att-table-title');
+  if(titleEl) titleEl.textContent = 'Log Absensi — ' + monthName;
+  if(tbody){
+    const sorted = [...filteredLogs].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    if(sorted.length === 0){
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">
+        ${q||selKar!=='all'?'Tidak ada log yang cocok':'Belum ada entri absensi bulan ini'}
+        <br><a href="#" onclick="openManualAttModal();return false" style="color:var(--green);font-size:11px;margin-top:6px;display:inline-block">+ Input absensi manual</a>
+      </td></tr>`;
+    } else {
+      const statusBadge = s => s==='hadir'?'<span class="badge badge-green">Hadir</span>'
+        :s==='izin'?'<span class="badge badge-amber">Izin</span>'
+        :s==='sakit'?'<span class="badge badge-amber">Sakit</span>'
+        :s==='alpha'?'<span class="badge badge-red">Alpha</span>'
+        :'<span class="badge badge-gray">Libur</span>';
+      tbody.innerHTML = sorted.map(e => `<tr>
+        <td style="white-space:nowrap;color:var(--text3)">${e.date?new Date(e.date+'T00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short'}):'—'}</td>
+        <td style="font-weight:500">${e.nama||'—'}</td>
+        <td>${statusBadge(e.status)}</td>
+        <td style="font-size:11px;color:var(--text3)">${e.catatan||'—'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteAttEntry('${e.id||''}')">×</button></td>
+      </tr>`).join('');
+    }
+  }
+}
+
+function openManualAttModal(){
+  const karOptions = KARYAWAN_DB.map(k =>
+    `<option value="${k.id}" data-nama="${k.nama}">${k.nama} — ${k.posisi}</option>`
+  ).join('');
+  openGModal('Input Absensi Manual',
+    `<div class="gfield">
+      <label>Karyawan</label>
+      <select id="att-kar" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+        <option value="">Pilih karyawan...</option>${karOptions}
+      </select>
+    </div>
+    <div class="gfield-row">
+      <div class="gfield">
+        <label>Tanggal</label>
+        <input id="att-tgl" type="date" value="${new Date().toISOString().slice(0,10)}">
+      </div>
+      <div class="gfield">
+        <label>Status</label>
+        <select id="att-status" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          <option value="hadir">Hadir</option>
+          <option value="izin">Izin</option>
+          <option value="sakit">Sakit</option>
+          <option value="alpha">Alpha</option>
+          <option value="libur">Libur</option>
+        </select>
+      </div>
+    </div>
+    <div class="gfield">
+      <label>Catatan (opsional)</label>
+      <input id="att-catatan" type="text" placeholder="Keterangan...">
+    </div>`,
+    'Simpan Absensi',
+    () => {
+      const karSel = document.getElementById('att-kar');
+      const karId  = karSel?.value;
+      const kNama  = karSel?.options[karSel.selectedIndex]?.dataset.nama || '';
+      const tgl    = document.getElementById('att-tgl')?.value;
+      const status = document.getElementById('att-status')?.value;
+      const cat    = document.getElementById('att-catatan')?.value.trim()||'';
+      if(!karId){ showToast('error','Pilih karyawan dulu'); return; }
+      if(!tgl)  { showToast('error','Tanggal wajib diisi'); return; }
+      // Cek duplikat
+      const existing = ATTENDANCE_DB.find(e=>e.karyawanId===karId && e.date===tgl);
+      if(existing){ existing.status=status; existing.catatan=cat; }
+      else {
+        ATTENDANCE_DB.push({
+          id: 'ATT-'+Date.now(), karyawanId:karId, nama:kNama,
+          date:tgl, status, catatan:cat, createdAt:new Date().toISOString()
+        });
+      }
+      saveATTENDANCE();
+      renderAttendanceModule();
+      showToast('success', kNama+' · '+status, tgl);
+      logActivity('Absensi', kNama+' · '+status+' · '+tgl);
+    }
+  );
+}
+
+function deleteAttEntry(id){
+  if(!id) return;
+  const idx = ATTENDANCE_DB.findIndex(e=>e.id===id);
+  if(idx<0) return;
+  const e = ATTENDANCE_DB[idx];
+  openConfirm('Hapus Entri Absensi', e.nama+' · '+e.status+' · '+e.date+' akan dihapus.', 'Hapus', ()=>{
+    ATTENDANCE_DB.splice(idx,1);
+    saveATTENDANCE();
+    renderAttendanceModule();
+    showToast('success','Entri dihapus');
+  });
+}
 let gModalSaveCallback=null;
 let confirmCallback=null;
 const ICONS={success:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="color:var(--green)"><polyline points="20 6 9 17 4 12"/></svg>',error:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="color:var(--red)"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',warning:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="color:var(--amber)"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',info:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="color:var(--blue)"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'};
@@ -7953,6 +8312,7 @@ function switchSettings(el,panel){
     const el2=document.getElementById('settings-'+p);
     if(el2)el2.style.display=p===panel?'':'none';
   });
+  if(panel==='loyalitas') loadLoyalitasPanel();
 }
 function exportData(nama){
   const rows = [];
