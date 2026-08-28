@@ -4259,6 +4259,22 @@ const STAFF_DB={
   'OKO-005':{name:'Rizal Fauzi',role:'Manajer',init:'RF'},
 };
 let currentUser=ACCOUNTS['owner@okomural.com'],cart=[],numpadStr='',cartTotal=0,_checkoutFinalTotal=0,attLog=[],clockInterval=null;
+
+function saveAttLog(){
+  const today = new Date().toISOString().slice(0,10);
+  localStorage.setItem('okomural_attlog_' + today, JSON.stringify(attLog));
+}
+function loadAttLog(){
+  const today = new Date().toISOString().slice(0,10);
+  try {
+    const saved = localStorage.getItem('okomural_attlog_' + today);
+    if(saved) attLog = JSON.parse(saved);
+  } catch(e) {}
+  // Hapus attLog hari lalu (cleanup otomatis)
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('okomural_attlog_') && !k.endsWith(today))
+    .forEach(k => localStorage.removeItem(k));
+}
 // USER_DB: semua user yang bisa login — seed dari knownUsers
 let USER_DB = [
   // Owner — bisa switch semua cabang
@@ -5029,6 +5045,7 @@ function handleAtt(type){
   const now = new Date();
   const time = now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   attLog.unshift({code, name:s.name, type, time});
+  saveAttLog(); // persist per hari
   // ── Sync ke ATTENDANCE_DB untuk payroll ──────────────────────────────
   const emp = KARYAWAN_DB.find(k => k.kode === code);
   if(emp){
@@ -5062,6 +5079,22 @@ function handleAtt(type){
       att.totalJam = Math.round((att.totalJam + hoursWorked) * 10) / 10;
       att._sessions[dayKey].out = now.getTime();
       att.hadir = Object.keys(att._sessions).filter(k => att._sessions[k].out).length;
+      // ── Update ATTENDANCE_LOG: tambah catatan clock out ─────────────
+      const todayStr = now.toISOString().slice(0,10);
+      const existLog = ATTENDANCE_LOG.find(l => l.karyawanId===emp.id && l.date===todayStr);
+      if(existLog){
+        existLog.catatan = (existLog.catatan||'') + ' · Clock Out ' + time;
+        existLog.clockOut = time;
+        existLog.jamKerja = Math.round(hoursWorked * 10) / 10;
+      } else {
+        ATTENDANCE_LOG.push({
+          id: 'ATT-' + Date.now(), karyawanId: emp.id, nama: emp.nama,
+          date: todayStr, status: 'hadir',
+          catatan: 'Clock Out ' + time, clockOut: time,
+          createdAt: now.toISOString(),
+        });
+      }
+      saveATTENDANCE_LOG();
     }
   }
   // SUPABASE: log attendance
