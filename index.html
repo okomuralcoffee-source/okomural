@@ -5121,9 +5121,10 @@ function showModule(mod){
   const allRenders={
     'inventory':renderInventory,
     'menu':renderMenuMgmt,
-    'attendance': ()=>{
+    'attendance': async ()=>{
       _attViewMonth = new Date().getMonth();
       _attViewYear  = new Date().getFullYear();
+      await loadAttendanceFromSupabase();
       renderAttendanceModule();
     },
     'finance':renderCashRecon,
@@ -5225,10 +5226,14 @@ function handleAtt(type){
       saveATTENDANCE_LOG();
     }
   }
-  // SUPABASE: log attendance
-  const empSupa = KARYAWAN_DB.find(k => k.kode === code);
-  if(empSupa?.supaId && typeof logAttendanceToSupabase === 'function')
-    logAttendanceToSupabase(empSupa.supaId, type, now.toISOString());
+  // ── SUPABASE Phase 5: log attendance_logs ────────────────────────────
+  if(currentUser?.supaAuthId && emp){
+    const tsNow = now.toISOString();
+    // Lookup UUID by nama, lalu INSERT attendance_log
+    getEmployeeUUIDByName(emp.nama).then(uuid => {
+      if(uuid) logAttendanceToSupabase(uuid, type, tsNow);
+    });
+  }
   saveATTENDANCE();
   renderAttLog(); updateAttStats();
   showToast('success', type==='in'?'Clock In berhasil':'Clock Out berhasil', s.name+' · '+time);
@@ -8480,6 +8485,8 @@ function openManualAttModal(){
       renderAttendanceModule();
       showToast('success', kNama+' · '+status, tgl);
       logActivity('Absensi', kNama+' · '+status+' · '+tgl);
+      // ── SUPABASE Phase 5: log manual absensi ─────────────────────────
+      logManualAttToSupabase(kNama, status, tgl, cat);
     }
   );
 }
@@ -12061,19 +12068,116 @@ async function saveBOMToSupabase(productId){
 // Load employees dari Supabase → merge ke KARYAWAN_DB
 async function loadEmployeesFromSupabase(){ return; }
 // Clock in/out → INSERT attendance_logs
+// ── PHASE 5: HR → Supabase attendance_logs ────────────────────────────────
+
+// Cache: STAFF_DB code → Supabase employee UUID
+// Diisi saat pertama kali Clock In atau load modul absensi
+let _staffUUIDCache = {};
+
+// Lookup Supabase employee UUID dari nama karyawan
+async function getEmployeeUUIDByName(name){
+  if(!currentUser?.supaAuthId) return null;
+  if(_staffUUIDCache[name]) return _staffUUIDCache[name];
+  try {
+    const { data, error } = await supa
+      .from('employees')
+      .select('id')
+      .ilike('name', name.trim())
+      .single();
+    if(!error && data?.id){
+      _staffUUIDCache[name] = data.id;
+      return data.id;
+    }
+  } catch(e) {}
+  return null;
+}
+
+// Log Clock In / Clock Out ke attendance_logs
 async function logAttendanceToSupabase(employeeSupaId, type, timestamp){
-  if(!employeeSupaId) return;
+  if(!currentUser?.supaAuthId) return;
+  // Resolve employee UUID jika yang dikirim bukan UUID (legacy empId lokal)
+  let empUUID = employeeSupaId;
+  if(empUUID && !empUUID.includes('-')){
+    // Bukan UUID — cari dari KARYAWAN_DB nama lalu lookup Supabase
+    const k = KARYAWAN_DB.find(x => x.id === empUUID);
+    if(k) empUUID = await getEmployeeUUIDByName(k.nama);
+  }
+  if(!empUUID){ console.warn('[Phase5] employee UUID not found, skip log'); return; }
   try {
     const { error } = await supa
       .from('attendance_logs')
       .insert({
-        employee_id: employeeSupaId,
-        type,
-        timestamp: timestamp || new Date().toISOString(),
-        branch_id: currentUser?.branch_id || null
+        employee_id:  empUUID,
+        type:         type === 'in' ? 'clock_in' : type === 'out' ? 'clock_out' : 'manual',
+        timestamp:    timestamp || new Date().toISOString(),
+        branch_id:    getBranchUUID(),
+        recorded_by:  getStaffUUID(),
+        notes:        null,
       });
-    if(error) console.warn('Attendance log error:', error.message);
-  } catch(e){ console.warn('logAttendanceToSupabase error:', e); }
+    if(error) console.warn('[Phase5] attendance log error:', error.message);
+    else console.log('[Phase5] Attendance logged:', type, empUUID?.slice(0,8));
+  } catch(e){ console.warn('[Phase5] logAttendanceToSupabase error:', e.message); }
+}
+
+// Log manual absensi ke attendance_logs
+async function logManualAttToSupabase(empName, status, date, catatan){
+  if(!currentUser?.supaAuthId) return;
+  const empUUID = await getEmployeeUUIDByName(empName);
+  if(!empUUID){ console.warn('[Phase5] manual att: employee UUID not found for', empName); return; }
+  try {
+    const { error } = await supa
+      .from('attendance_logs')
+      .insert({
+        employee_id:  empUUID,
+        type:         'manual',
+        timestamp:    (date || new Date().toISOString().slice(0,10)) + 'T00:00:00+07:00',
+        branch_id:    getBranchUUID(),
+        recorded_by:  getStaffUUID(),
+        notes:        status + (catatan ? ' — ' + catatan : ''),
+      });
+    if(error) console.warn('[Phase5] manual att log error:', error.message);
+    else console.log('[Phase5] Manual attendance logged:', empName, status, date);
+  } catch(e){ console.warn('[Phase5] logManualAttToSupabase error:', e.message); }
+}
+
+// Load attendance_logs dari Supabase → merge ke ATTENDANCE_LOG
+async function loadAttendanceFromSupabase(){
+  if(!currentUser?.supaAuthId) return;
+  try {
+    const now = new Date();
+    const monthStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    const { data, error } = await supa
+      .from('attendance_logs')
+      .select('id, employee_id, type, timestamp, notes, employees(name)')
+      .gte('timestamp', monthStr + '-01T00:00:00Z')
+      .eq('branch_id', getBranchUUID())
+      .order('timestamp', { ascending: false });
+    if(error){ console.warn('[Phase5] loadAttendance error:', error.message); return; }
+    if(!data || data.length === 0) return;
+    // Merge ke ATTENDANCE_LOG — hanya tambah yang belum ada (by Supabase id)
+    let added = 0;
+    data.forEach(row => {
+      const supaLogId = 'SUPA-' + row.id;
+      if(ATTENDANCE_LOG.find(l => l.id === supaLogId)) return;
+      const date = (row.timestamp || '').slice(0,10);
+      const empName = row.employees?.name || '—';
+      const status = row.type === 'clock_in' ? 'hadir' : row.type === 'clock_out' ? 'hadir' : (row.notes?.split(' ')[0] || 'hadir');
+      ATTENDANCE_LOG.push({
+        id:         supaLogId,
+        karyawanId: row.employee_id,
+        nama:       empName,
+        date,
+        status,
+        catatan:    row.type === 'clock_in' ? 'Clock In' : row.type === 'clock_out' ? 'Clock Out' : (row.notes || ''),
+        createdAt:  row.timestamp,
+      });
+      added++;
+    });
+    if(added > 0){
+      saveATTENDANCE_LOG();
+      console.log('[Phase5] Loaded', added, 'attendance records from Supabase');
+    }
+  } catch(e){ console.warn('[Phase5] loadAttendanceFromSupabase error:', e.message); }
 }
 // Save karyawan baru → INSERT employees
 async function saveKaryawanToSupabase(karyawan){
