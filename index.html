@@ -5042,6 +5042,21 @@ function handleAtt(type){
     if(!att._sessions) att._sessions = {};  // guard for legacy seed data
     if(type === 'in'){
       if(!att._sessions[dayKey]) att._sessions[dayKey] = {in: now.getTime()};
+      // ── Sync ke ATTENDANCE_LOG (array) untuk modul Absensi ────────────
+      const todayStr = now.toISOString().slice(0,10);
+      const existLog = ATTENDANCE_LOG.find(l => l.karyawanId===emp.id && l.date===todayStr);
+      if(!existLog){
+        ATTENDANCE_LOG.push({
+          id:          'ATT-' + Date.now(),
+          karyawanId:  emp.id,
+          nama:        emp.nama,
+          date:        todayStr,
+          status:      'hadir',
+          catatan:     'Clock In ' + time,
+          createdAt:   now.toISOString(),
+        });
+        saveATTENDANCE_LOG();
+      }
     } else if(type === 'out' && att._sessions[dayKey] && att._sessions[dayKey].in){
       const hoursWorked = (now.getTime() - att._sessions[dayKey].in) / 3600000;
       att.totalJam = Math.round((att.totalJam + hoursWorked) * 10) / 10;
