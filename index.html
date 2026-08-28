@@ -4382,7 +4382,9 @@ function loadAllLocalData(){
   CABANG_DB     = lsLoad(LS_KEYS.cabang,   CABANG_DB);
   USER_DB       = lsLoad(LS_KEYS.users,    USER_DB);
   OPEX_DB       = lsLoad(LS_KEYS.opex,     OPEX_DB);
+  ATTENDANCE_LOG= lsLoad('okomural_att_log', ATTENDANCE_LOG);
   PRICELIST_DB  = lsLoad(LS_KEYS.pricelist, PRICELIST_DB);
+  ATTENDANCE_LOG= lsLoad('okomural_att_log', ATTENDANCE_LOG);
   KARYAWAN_DB   = lsLoad(LS_KEYS.karyawan, KARYAWAN_DB);
   CAPEX_DB      = lsLoad(LS_KEYS.capex,    CAPEX_DB);
   capexIdCounter= CAPEX_DB.length + 1;
@@ -8139,7 +8141,7 @@ function renderAttendanceModule(){
   if(headerEl) headerEl.textContent = monthName;
 
   // Filter log entries for this month
-  const monthLogs = ATTENDANCE_DB.filter(e => (e.date||'').startsWith(monthStr));
+  const monthLogs = ATTENDANCE_LOG.filter(e => (e.date||'').startsWith(monthStr));
   const filteredLogs = monthLogs.filter(e => {
     if(selKar !== 'all' && e.karyawanId !== selKar) return false;
     if(q && !(e.nama||'').toLowerCase().includes(q)) return false;
@@ -8170,7 +8172,7 @@ function renderAttendanceModule(){
 
     // Build daily status map (combine all karyawan for dot color)
     const dayStatus = {};
-    monthLogs.forEach(e => {
+    ATTENDANCE_LOG.filter(e=>(e.date||'').startsWith(monthStr)).forEach(e => {
       const d = parseInt((e.date||'').slice(8,10));
       if(!dayStatus[d] || e.status==='hadir') dayStatus[d] = e.status;
     });
@@ -8258,15 +8260,15 @@ function openManualAttModal(){
       if(!karId){ showToast('error','Pilih karyawan dulu'); return; }
       if(!tgl)  { showToast('error','Tanggal wajib diisi'); return; }
       // Cek duplikat
-      const existing = ATTENDANCE_DB.find(e=>e.karyawanId===karId && e.date===tgl);
+      const existing = ATTENDANCE_LOG.find(e=>e.karyawanId===karId && e.date===tgl);
       if(existing){ existing.status=status; existing.catatan=cat; }
       else {
-        ATTENDANCE_DB.push({
+        ATTENDANCE_LOG.push({
           id: 'ATT-'+Date.now(), karyawanId:karId, nama:kNama,
           date:tgl, status, catatan:cat, createdAt:new Date().toISOString()
         });
       }
-      saveATTENDANCE();
+      saveATTENDANCE_LOG();
       renderAttendanceModule();
       showToast('success', kNama+' · '+status, tgl);
       logActivity('Absensi', kNama+' · '+status+' · '+tgl);
@@ -8276,12 +8278,12 @@ function openManualAttModal(){
 
 function deleteAttEntry(id){
   if(!id) return;
-  const idx = ATTENDANCE_DB.findIndex(e=>e.id===id);
+  const idx = ATTENDANCE_LOG.findIndex(e=>e.id===id);
   if(idx<0) return;
-  const e = ATTENDANCE_DB[idx];
+  const e = ATTENDANCE_LOG[idx];
   openConfirm('Hapus Entri Absensi', e.nama+' · '+e.status+' · '+e.date+' akan dihapus.', 'Hapus', ()=>{
-    ATTENDANCE_DB.splice(idx,1);
-    saveATTENDANCE();
+    ATTENDANCE_LOG.splice(idx,1);
+    saveATTENDANCE_LOG();
     renderAttendanceModule();
     showToast('success','Entri dihapus');
   });
@@ -9954,6 +9956,11 @@ let ATTENDANCE_DB = {
   'EMP-004': { '2026-08': { hadir:18, izin:3, alpha:1, totalJam:108, _sessions:{} } },
   'EMP-005': { '2026-08': { hadir:20, izin:1, alpha:0, totalJam:120, _sessions:{} } },
 };
+// ATTENDANCE_LOG: array entri absensi harian untuk UI modul Absensi
+// Berbeda dari ATTENDANCE_DB (object per karyawan untuk payroll)
+let ATTENDANCE_LOG = [];
+function saveATTENDANCE_LOG(){ lsSave('okomural_att_log', ATTENDANCE_LOG); }
+
 let payrollDetailEmpId = null;
 /* ── Core calculations ── */
 function calcHPJ(gajiPokok){ return gajiPokok / 27 / 6; }
