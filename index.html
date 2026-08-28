@@ -5045,6 +5045,8 @@ function goToLauncher(){
   document.getElementById('lnc-code-input').focus();
   // Hydrate semua data dari Supabase di background (non-blocking)
   if(typeof initAllSupabaseData === 'function') initAllSupabaseData();
+  // Pre-load employee UUID cache untuk attendance
+  preloadEmployeeUUIDCache();
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
 async function doLogout(){
@@ -12088,17 +12090,59 @@ async function getEmployeeUUIDByName(name){
   if(!currentUser?.supaAuthId) return null;
   if(_staffUUIDCache[name]) return _staffUUIDCache[name];
   try {
-    const { data, error } = await supa
+    // Coba exact match dulu
+    let { data, error } = await supa
       .from('employees')
       .select('id')
       .ilike('name', name.trim())
-      .single();
+      .maybeSingle();
     if(!error && data?.id){
       _staffUUIDCache[name] = data.id;
       return data.id;
     }
-  } catch(e) {}
+    // Fallback: ambil semua employees, cari yang paling mirip namanya
+    const { data: all } = await supa.from('employees').select('id, name');
+    if(all){
+      // Cari by first name atau partial
+      const firstName = name.trim().split(' ')[0].toLowerCase();
+      const match = all.find(e =>
+        e.name.toLowerCase().includes(firstName) ||
+        firstName.includes(e.name.toLowerCase().split(' ')[0])
+      );
+      if(match){
+        _staffUUIDCache[name] = match.id;
+        console.log('[Phase5] UUID resolved by partial match:', name, '→', match.name, match.id.slice(0,8));
+        return match.id;
+      }
+    }
+  } catch(e) { console.warn('[Phase5] getEmployeeUUID error:', e.message); }
+  // Last resort: gunakan currentUser.supaId jika yang clock in adalah user yang login
+  if(currentUser?.supaId){
+    console.log('[Phase5] UUID fallback to currentUser:', currentUser.supaId.slice(0,8));
+    _staffUUIDCache[name] = currentUser.supaId;
+    return currentUser.supaId;
+  }
   return null;
+}
+
+// Pre-load semua employee UUID ke cache saat pertama kali dibutuhkan
+async function preloadEmployeeUUIDCache(){
+  if(!currentUser?.supaAuthId) return;
+  if(Object.keys(_staffUUIDCache).length > 0) return; // sudah loaded
+  try {
+    const { data } = await supa.from('employees').select('id, name');
+    if(!data) return;
+    // Map Supabase name → UUID
+    data.forEach(e => { _staffUUIDCache[e.name] = e.id; });
+    // Juga map KARYAWAN_DB nama → UUID (best-effort fuzzy)
+    KARYAWAN_DB.forEach(k => {
+      if(_staffUUIDCache[k.nama]) return;
+      const firstName = k.nama.split(' ')[0].toLowerCase();
+      const match = data.find(e => e.name.toLowerCase().includes(firstName));
+      if(match) _staffUUIDCache[k.nama] = match.id;
+    });
+    console.log('[Phase5] Employee UUID cache loaded:', Object.keys(_staffUUIDCache).length, 'entries');
+  } catch(e) { console.warn('[Phase5] preloadEmployeeUUIDCache error:', e.message); }
 }
 
 // Log Clock In / Clock Out ke attendance_logs
