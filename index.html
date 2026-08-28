@@ -2766,15 +2766,23 @@ async function hydrateUserFromSession(session) {
         <button class="btn btn-primary btn-sm" onclick="openTambahCabang()">+ Tambah Cabang</button>
       </div>
       <div id="settings-user" style="display:none">
-        <div style="font-size:14px;font-weight:600;margin-bottom:14px">User &amp; Role</div>
-        <div class="table-wrap" style="margin-bottom:14px">
-          <table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th></th></tr></thead><tbody>
-            <tr><td style="color:var(--text);font-weight:500">Budi Santoso</td><td style="color:var(--text3)">owner@okomural.com</td><td><span class="badge badge-green">Owner</span></td><td><button class="btn btn-secondary btn-sm" onclick="openEditUser('Budi Santoso','owner@okomural.com','Owner')">Edit</button></td></tr>
-            <tr><td style="color:var(--text);font-weight:500">Dewi Sartika</td><td style="color:var(--text3)">dewi@okomural.com</td><td><span class="badge badge-gray">Manajer</span></td><td><button class="btn btn-secondary btn-sm" onclick="openEditUser('Dewi Sartika','dewi@okomural.com','Manajer')">Edit</button></td></tr>
-            <tr><td style="color:var(--text);font-weight:500">Rizki Pratama</td><td style="color:var(--text3)">kasir@okomural.com</td><td><span class="badge badge-gray">Kasir</span></td><td><button class="btn btn-secondary btn-sm" onclick="openEditUser('Rizki Pratama','kasir@okomural.com','Kasir')">Edit</button></td></tr>
-          </tbody></table>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div>
+            <div style="font-size:14px;font-weight:600">User &amp; Role Management</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Kelola akun kasir, manajer, dan barista</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openTambahUser()">+ Tambah User</button>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="openTambahUser()">+ Tambah User</button>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nama</th><th>Role</th><th>Cabang</th><th>Status</th><th></th></tr></thead>
+            <tbody id="user-mgmt-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">
+                <div style="font-size:12px">Memuat data user...</div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div id="settings-loyalitas" style="display:none">
         <div style="font-size:14px;font-weight:600;margin-bottom:4px">🏆 Program Loyalitas & Tier</div>
@@ -5060,12 +5068,15 @@ function goToLauncher(){
   preloadEmployeeUUIDCache();
   // Pre-load product UUID dari Supabase agar checkout bisa pakai UUID benar
   loadProductsFromSupabase();
+  // Phase 9: init realtime subscriptions
+  setTimeout(initRealtimeSubscriptions, 1000);
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
 async function doLogout(){
   logActivity('Logout', 'Sesi berakhir');
   // Sign out dari Supabase (hapus session token)
   try { await supa.auth.signOut(); } catch(e) { console.warn('signOut error:', e.message); }
+  cleanupRealtimeSubscriptions();
   currentUser = null;
   cart = [];
   cartTotal = 0;
@@ -9028,38 +9039,6 @@ function deleteUser(idx){
   renderSettingsUser();
   showToast('success', u.nama+' dihapus', 'User tidak bisa login lagi');
 }
-function openTambahUser(){
-  openGModal('Tambah User Baru',
-    `<div class="gfield"><label>Nama Lengkap</label><input id="nu-nama" type="text" placeholder="Nama lengkap..." class="struk-input"></div>
-    <div class="gfield"><label>Username Login</label><input id="nu-username" type="text" placeholder="Contoh: BudiKasir" class="struk-input">
-      <div style="font-size:10px;color:var(--text3);margin-top:3px">Akan login dengan username ini</div></div>
-    <div class="gfield"><label>Password</label><input id="nu-pass" type="password" placeholder="Min. 8 karakter" class="struk-input"></div>
-    <div class="gfield"><label>Role</label><select id="nu-role" class="struk-input">
-      <option>Kasir</option><option>Barista</option><option>Manajer</option><option>Owner</option>
-    </select></div>`,
-    'Buat User',
-    ()=>{
-      const nama     = document.getElementById('nu-nama').value.trim();
-      const username = document.getElementById('nu-username').value.trim().replace(/\s+/g,'');
-      const pass     = document.getElementById('nu-pass').value;
-      const role     = document.getElementById('nu-role').value;
-      if(!nama||!username){ showToast('error','Nama dan username wajib'); return; }
-      if(pass.length < 8){ showToast('error','Password minimal 8 karakter'); return; }
-      const emailInternal = username + '@okomural.internal';
-      if(USER_DB.find(u=>u.username===username)){ showToast('error','Username sudah digunakan'); return; }
-      const newUser = {nama, username, email:emailInternal, role, password:pass, status:'aktif'};
-      USER_DB.push(newUser);
-      saveUSERS();
-      ACCOUNTS[emailInternal] = {
-        name: nama,
-        init: nama.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(),
-        role, access: 'launcher'
-      };
-      renderSettingsUser();
-      showToast('success', nama+' ditambahkan', 'Login: '+username+' · Role: '+role);
-    }
-  );
-}
 function toggleCabangStatus(nama){
   const cab=CABANG_DB.find(c=>c.nama===nama);
   if(!cab) return;
@@ -10745,6 +10724,10 @@ async function handleMenuPhotoUpload(event){
       const wrap = document.getElementById('pm-photo-preview-wrap');
       if(wrap) wrap.innerHTML = '<img src="'+publicUrl+'" style="width:100%;height:100%;object-fit:cover">';
       showToast('success','Foto diupload ke Supabase');
+      // Update products.image_url jika produk sudah ada supaId
+      const editId = parseInt(document.getElementById('pm-name')?.dataset?.editId||'0');
+      const menuItem = MENU.find(m=>m.id===editId);
+      if(menuItem?.supaId) updateProductImageUrl(menuItem.supaId, publicUrl);
       return;
     }
   }
@@ -12913,10 +12896,168 @@ async function loadSalesAggregateFromSupabase(dateFrom, dateTo){
 // saveExpenseToSupabase moved to Phase 7 section above
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 8 — SETTINGS
-   Branches + system_config → Supabase
+   Branches + system_config + User Management → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
 // Load system_config → merge ke STRUK_CONFIG & loyalty settings
 async function loadSystemConfigFromSupabase(){ return; }
+
+// ── Phase 8: User Management via Edge Function ────────────────────────────
+const EDGE_URL = 'https://uutkxrsalpzfvfjtsnoq.supabase.co/functions/v1/admin-users';
+
+async function callAdminEdge(payload){
+  const { data: { session } } = await supa.auth.getSession();
+  if(!session) throw new Error('No active session');
+  const res = await fetch(EDGE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json();
+  if(!res.ok || json.error) throw new Error(json.error || 'Edge function error');
+  return json;
+}
+
+async function loadUsersFromSupabase(){
+  if(currentUser?.role !== 'Owner') return;
+  const tbody = document.getElementById('user-mgmt-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr>';
+  try {
+    const { data: employees } = await callAdminEdge({ action:'list' });
+    if(!employees || employees.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada user</td></tr>';
+      return;
+    }
+    const roleColor = {owner:'badge-green',manajer:'badge-amber',kasir:'badge-gray',barista:'badge-gray'};
+    tbody.innerHTML = employees.map(e => {
+      const roleName   = e.roles?.name||'—';
+      const branchName = e.branches?.name||'Semua Cabang';
+      const isOwner    = roleName === 'owner';
+      return `<tr>
+        <td style="font-weight:500">${e.name}</td>
+        <td><span class="badge ${roleColor[roleName]||'badge-gray'}">${roleName.charAt(0).toUpperCase()+roleName.slice(1)}</span></td>
+        <td style="font-size:11px;color:var(--text3)">${branchName}</td>
+        <td><span class="badge badge-green" style="font-size:10px">Aktif</span></td>
+        <td style="white-space:nowrap">${!isOwner?`
+          <button class="btn btn-secondary btn-sm" onclick="openEditUserModal('${e.id}','${e.name}','${roleName}','${e.branch_id||''}')">Edit</button>
+          <button class="btn btn-secondary btn-sm" style="margin-left:4px" onclick="openResetPasswordModal('${e.id}','${e.name}')">🔑</button>
+          <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="toggleUserActive('${e.id}','${e.name}',true)">Nonaktifkan</button>
+        `:'<span style="font-size:10px;color:var(--text3)">Owner</span>'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--red)">${e.message}</td></tr>`;
+    console.warn('[Phase8] loadUsers error:', e.message);
+  }
+}
+
+function openTambahUser(){
+  const cabOpts = CABANG_DB.map(c=>`<option value="${c.id}">${c.nama}</option>`).join('');
+  openGModal('Tambah User Baru',
+    `<div class="gfield"><label>Nama Lengkap</label><input id="nu-name" type="text" placeholder="Nama karyawan..."></div>
+    <div class="gfield"><label>Email</label><input id="nu-email" type="email" placeholder="email@okomural.com"></div>
+    <div class="gfield"><label>Password</label><input id="nu-pass" type="password" placeholder="Minimal 8 karakter"></div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Role</label>
+        <select id="nu-role" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          <option value="kasir">Kasir</option><option value="barista">Barista</option><option value="manajer">Manajer</option>
+        </select>
+      </div>
+      <div class="gfield"><label>Cabang</label>
+        <select id="nu-branch" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          <option value="">Semua Cabang</option>${cabOpts}
+        </select>
+      </div>
+    </div>`,
+    'Buat Akun',
+    async () => {
+      const name=document.getElementById('nu-name').value.trim();
+      const email=document.getElementById('nu-email').value.trim();
+      const pass=document.getElementById('nu-pass').value;
+      const role=document.getElementById('nu-role').value;
+      const branchId=document.getElementById('nu-branch').value;
+      if(!name){showToast('error','Nama wajib diisi');return;}
+      if(!email){showToast('error','Email wajib diisi');return;}
+      if(pass.length<8){showToast('error','Password minimal 8 karakter');return;}
+      try {
+        showToast('info','Membuat akun...','');
+        await callAdminEdge({action:'create',name,email,password:pass,role,branchId});
+        showToast('success',name+' berhasil ditambahkan',role);
+        logActivity('Settings','Tambah user: '+name+' ('+role+')');
+        loadUsersFromSupabase();
+      } catch(e){showToast('error','Gagal membuat akun',e.message);}
+    }
+  );
+}
+
+function openEditUserModal(empId, name, role, branchId){
+  const cabOpts = [
+    '<option value="">Semua Cabang</option>',
+    ...CABANG_DB.map(c=>`<option value="${BRANCH_LOCAL_TO_UUID[c.id]||c.id}"${(BRANCH_LOCAL_TO_UUID[c.id]||c.id)===branchId?' selected':''}>${c.nama}</option>`)
+  ].join('');
+  openGModal('Edit User — '+name,
+    `<div class="gfield"><label>Nama</label><input id="eu-name" type="text" value="${name}"></div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Role</label>
+        <select id="eu-role" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          ${['kasir','barista','manajer'].map(r=>`<option value="${r}"${r===role?' selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="gfield"><label>Cabang</label>
+        <select id="eu-branch" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
+          ${cabOpts}
+        </select>
+      </div>
+    </div>`,
+    'Simpan',
+    async () => {
+      const newName=document.getElementById('eu-name').value.trim();
+      const newRole=document.getElementById('eu-role').value;
+      const newBranch=document.getElementById('eu-branch').value;
+      try {
+        await callAdminEdge({action:'update',employeeId:empId,name:newName,role:newRole,branchId:newBranch});
+        showToast('success',newName+' diperbarui');
+        logActivity('Settings','Edit user: '+newName);
+        loadUsersFromSupabase();
+      } catch(e){showToast('error','Gagal update',e.message);}
+    }
+  );
+}
+
+function openResetPasswordModal(empId, name){
+  openGModal('Reset Password — '+name,
+    `<div class="gfield"><label>Password Baru</label><input id="rp-pass" type="password" placeholder="Minimal 8 karakter"></div>
+    <div class="gfield"><label>Konfirmasi</label><input id="rp-pass2" type="password" placeholder="Ulangi password baru"></div>`,
+    'Reset Password',
+    async () => {
+      const pass=document.getElementById('rp-pass').value;
+      const pass2=document.getElementById('rp-pass2').value;
+      if(pass.length<8){showToast('error','Password minimal 8 karakter');return;}
+      if(pass!==pass2){showToast('error','Password tidak cocok');return;}
+      try {
+        await callAdminEdge({action:'reset_password',employeeId:empId,newPassword:pass});
+        showToast('success','Password '+name+' direset');
+        logActivity('Settings','Reset password: '+name);
+      } catch(e){showToast('error','Gagal reset password',e.message);}
+    }
+  );
+}
+
+function toggleUserActive(empId, name, disable){
+  openConfirm(
+    (disable?'Nonaktifkan':'Aktifkan')+' User',
+    name+' akan '+(disable?'dinonaktifkan':'diaktifkan')+'. Lanjutkan?',
+    disable?'Nonaktifkan':'Aktifkan',
+    async () => {
+      try {
+        await callAdminEdge({action:'update',employeeId:empId,disabled:disable});
+        showToast('success',name+(disable?' dinonaktifkan':' diaktifkan'));
+        logActivity('Settings',(disable?'Nonaktifkan':'Aktifkan')+' user: '+name);
+        loadUsersFromSupabase();
+      } catch(e){showToast('error','Gagal',e.message);}
+    }
+  );
+}
 // Upsert system_config key-value
 async function saveSystemConfigToSupabase(key, value){
   try {
@@ -12931,8 +13072,91 @@ async function saveSystemConfigToSupabase(key, value){
    Supabase Realtime channels → live stock alert + live dashboard
 ══════════════════════════════════════════════════════════════════════════════ */
 let _realtimeChannels = [];
+let _realtimeActive   = false;
+
 function initRealtimeSubscriptions(){
-  // Standalone mode — no realtime
+  if(!currentUser?.supaAuthId) return;
+  if(_realtimeActive) return; // sudah subscribe
+  _realtimeActive = true;
+
+  // ── Channel 1: sales → update Live Dashboard ─────────────────────────
+  const salesCh = supa
+    .channel('realtime-sales')
+    .on('postgres_changes', {
+      event:  '*',
+      schema: 'public',
+      table:  'sales',
+      filter: `branch_id=eq.${getBranchUUID()}`,
+    }, payload => {
+      console.log('[Phase9] Sales realtime event:', payload.eventType);
+      // Re-render live dashboard jika sedang tampil
+      const liveModule = document.getElementById('module-live-dashboard');
+      if(liveModule && liveModule.closest('.module-active, [style*="display: block"], [style*="display:block"]')){
+        renderLiveDashboard();
+      }
+      // Update shift sidebar revenue
+      if(activeShift && payload.new?.payment_status === 'paid'){
+        const amount = parseFloat(payload.new?.total_amount) || 0;
+        showToast('info', '💰 Transaksi baru', 'Rp ' + amount.toLocaleString('id'));
+      }
+    })
+    .subscribe(status => {
+      console.log('[Phase9] Sales channel:', status);
+    });
+
+  // ── Channel 2: inventory_stocks → trigger stock alert ────────────────
+  const invCh = supa
+    .channel('realtime-inventory')
+    .on('postgres_changes', {
+      event:  'UPDATE',
+      schema: 'public',
+      table:  'inventory_stocks',
+      filter: `branch_id=eq.${getBranchUUID()}`,
+    }, payload => {
+      console.log('[Phase9] Inventory realtime event:', payload.new?.quantity);
+      // Update INV lokal
+      if(payload.new){
+        const matId = payload.new.material_id;
+        const invItem = INV.find(i => i.matId === matId);
+        if(invItem){
+          invItem.qty    = parseFloat(payload.new.quantity) || invItem.qty;
+          invItem.status = invItem.qty <= 0 ? 'critical' : invItem.qty <= invItem.min ? 'warning' : 'safe';
+        }
+      }
+      // Re-check stock alerts
+      checkStockAlerts();
+    })
+    .subscribe(status => {
+      console.log('[Phase9] Inventory channel:', status);
+    });
+
+  // ── Channel 3: pos_shifts → update shift info ─────────────────────────
+  const shiftCh = supa
+    .channel('realtime-shifts')
+    .on('postgres_changes', {
+      event:  'UPDATE',
+      schema: 'public',
+      table:  'pos_shifts',
+    }, payload => {
+      if(activeShift?.supaId === payload.new?.id){
+        activeShift.totalRevenue     = parseFloat(payload.new?.total_revenue) || activeShift.totalRevenue;
+        activeShift.totalTransactions= parseInt(payload.new?.total_transactions) || activeShift.totalTransactions;
+        syncShiftSidebar();
+      }
+    })
+    .subscribe();
+
+  _realtimeChannels = [salesCh, invCh, shiftCh];
+  console.log('[Phase9] Realtime subscriptions initialized for branch:', getBranchUUID().slice(0,8));
+}
+
+function cleanupRealtimeSubscriptions(){
+  _realtimeChannels.forEach(ch => {
+    try { supa.removeChannel(ch); } catch(e) {}
+  });
+  _realtimeChannels = [];
+  _realtimeActive   = false;
+  console.log('[Phase9] Realtime channels cleaned up');
 }
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 10 — STORAGE
@@ -12942,15 +13166,35 @@ function initRealtimeSubscriptions(){
 async function uploadProductPhoto(file, productName){
   try {
     const ext  = file.name.split('.').pop();
-    const path = 'products/' + productName.replace(/\s+/g,'-').toLowerCase() + '-' + Date.now() + '.' + ext;
+    const path = productName.replace(/\s+/g,'-').toLowerCase() + '-' + Date.now() + '.' + ext;
     const { data, error } = await supa.storage
-      .from('products')
+      .from('product-images')
       .upload(path, file, { upsert: true });
-    if(error){ console.warn('Photo upload error:', error.message); return null; }
-    const { data: urlData } = supa.storage.from('products').getPublicUrl(path);
+    if(error){ console.warn('[Phase10] Photo upload error:', error.message); return null; }
+    const { data: urlData } = supa.storage.from('product-images').getPublicUrl(path);
+    console.log('[Phase10] Photo uploaded:', urlData?.publicUrl?.slice(-30));
     return urlData?.publicUrl || null;
   } catch(e){ console.warn('uploadProductPhoto error:', e); return null; }
 }
+// Update products.image_url setelah upload berhasil
+async function updateProductImageUrl(supaId, imageUrl){
+  if(!supaId) return;
+  try {
+    const { error } = await supa.from('products').update({ image_url: imageUrl }).eq('id', supaId);
+    if(error) console.warn('[Phase10] update image_url error:', error.message);
+    else console.log('[Phase10] image_url updated for product:', supaId.slice(0,8));
+  } catch(e){ console.warn('[Phase10] updateProductImageUrl error:', e.message); }
+}
+
+// Delete foto produk dari storage
+async function deleteProductPhoto(imageUrl){
+  if(!imageUrl) return;
+  try {
+    const path = imageUrl.split('/product-images/').pop();
+    if(path) await supa.storage.from('product-images').remove([path]);
+  } catch(e){ console.warn('[Phase10] deleteProductPhoto error:', e.message); }
+}
+
 // Upload foto karyawan ke bucket 'avatars', return public URL
 async function uploadAvatarPhoto(file, employeeName){
   try {
