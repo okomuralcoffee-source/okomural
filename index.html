@@ -5634,6 +5634,13 @@ function renderLiveDashboard(){
     else if(m==='qris') payBreak.QRIS += (t.total||0);
     else if(m==='card') payBreak.Kartu += (t.total||0);
   });
+  // ── Belanja harian (BELANJA_LOG) ─────────────────────────────────────
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayBelanja = BELANJA_LOG.filter(l => (l.createdAt||'').slice(0,10) === todayStr);
+  const todayExpense = todayBelanja.filter(l=>l.type==='expense').reduce((s,l)=>s+(l.amount||0),0);
+  const todayRestock = todayBelanja.filter(l=>l.type==='restock').reduce((s,l)=>s+(l.amount||0),0);
+  const todayNetProfit = todayRev - todayExpense - todayRestock;
+
   // ── Historical for chart ────────────────────────────────────────────────
   const d = BIZ_DATA.monthly;
   const cur = d[d.length-1], prev = d[d.length-2];
@@ -5642,11 +5649,12 @@ function renderLiveDashboard(){
   const grossMargin = ((cur.rev-cur.cogs)/cur.rev*100).toFixed(1);
   // ── KPI Row ─────────────────────────────────────────────────────────────
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const netColor = todayNetProfit >= 0 ? 1 : -1;
   el.innerHTML =
-    kpiHTML(ICON_DOLLAR, 'Revenue Hari Ini', rp(todayRev), todayTxCount + ' transaksi', todayRev>0?1:0, '') +
-    kpiHTML(ICON_TREND,  'Avg / Transaksi',  rp(todayAvg),  'Hari ini', 0, '') +
-    kpiHTML(ICON_PCT,    'Gross Margin',      grossMargin+'%','Target >55%', parseFloat(grossMargin)>=55?1:-1, '') +
-    kpiHTML(ICON_OPEX,   'Revenue Bulan Ini', rp(cur.rev),   'Agustus 2026', revChg>0?1:-1, revChg+'%');
+    kpiHTML(ICON_DOLLAR, 'Revenue Hari Ini',   rp(todayRev),        todayTxCount + ' transaksi', todayRev>0?1:0, '') +
+    kpiHTML(ICON_OPEX,   'Pengeluaran Hari Ini', rp(todayExpense+todayRestock), 'Opex + Restock', todayExpense+todayRestock>0?-1:0, '') +
+    kpiHTML(ICON_TREND,  'Net Profit Hari Ini', rp(todayNetProfit),  'Revenue - Pengeluaran', netColor, '') +
+    kpiHTML(ICON_PCT,    'Gross Margin',         grossMargin+'%',     'Target >55%', parseFloat(grossMargin)>=55?1:-1, '');
   // ── Last sync timestamp ─────────────────────────────────────────────────
   const ts = document.getElementById('ld-last-sync');
   if(ts) ts.textContent = new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
@@ -5811,7 +5819,7 @@ function renderPL(){
   const paid      = SESSION.transactions.filter(t => t.status === 'paid');
   const totalRev  = paid.reduce((s,t) => s+t.total, 0);
   const totalCogs = paid.reduce((s,t) => s+(t.hpp||0), 0);
-  const totalOpex = BELANJA_LOG.filter(l=>l.type==='expense').reduce((s,l)=>s+l.amount,0);
+  const totalOpex = BELANJA_LOG.reduce((s,l)=>s+(l.amount||0), 0); // expense + restock
   const totalPayroll = KARYAWAN_DB.reduce((s,k)=>s+(k.gaji||0),0);
   // Fallback ke BIZ_DATA untuk bulan-bulan sebelumnya (seed)
   const histData  = BIZ_DATA.monthly.slice(0,-1); // exclude bulan ini
@@ -8812,7 +8820,9 @@ function submitPengeluaran(){
     catatan,
     kasir: currentUser.name,
     time: now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'}),
-    createdAt: now.toISOString()
+    createdAt: now.toISOString(),
+    shiftId: activeShift?.id || null,   // Opsi X: null jika tidak ada shift aktif
+    branchId: activeBranch?.id || 'CAB-001',
   };
   BELANJA_LOG.push(entry);
   // SUPABASE: save expense
@@ -8864,6 +8874,8 @@ function submitRestock(){
   const entry = {
     id: 'RST-' + Date.now(),
     type: 'restock',
+    shiftId: activeShift?.id || null,
+    branchId: activeBranch?.id || 'CAB-001',
     nama: invItem.name,
     bahan: invItem.name,
     bahanId, qty, amount: harga,
@@ -11919,6 +11931,29 @@ function printShiftReport(shiftData){
   const itemCounts={};
   shiftTx.forEach(t=>(t.items||[]).forEach(i=>{itemCounts[i.name]=(itemCounts[i.name]||0)+(i.qty||1);}));
   const topItems=Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  // Ambil belanja yang di-tag ke shift ini (Opsi X: tanpa shiftId tidak masuk)
+  const shiftBelanja = (BELANJA_LOG||[]).filter(l => l.shiftId === s.id);
+  const shiftExpense = shiftBelanja.filter(l=>l.type==='expense');
+  const shiftRestock = shiftBelanja.filter(l=>l.type==='restock');
+  const totalExpense = shiftExpense.reduce((s,l)=>s+(l.amount||0),0);
+  const totalRestock = shiftRestock.reduce((s,l)=>s+(l.amount||0),0);
+  const totalBelanja = totalExpense + totalRestock;
+  const netShift     = (s.totalRevenue||0) - totalBelanja;
+
+  const belanjaSection = shiftBelanja.length > 0 ? `
+<hr class="divider">
+<div class="section">Pengeluaran Shift</div>
+${shiftExpense.length > 0 ? `
+  <div style="font-size:10px;color:#888;margin-bottom:3px">Operasional</div>
+  ${shiftExpense.map(l=>`<div class="row"><span>${l.nama}</span><span style="color:#c0392b">-Rp ${fmt(l.amount||0)}</span></div>`).join('')}
+` : ''}
+${shiftRestock.length > 0 ? `
+  <div style="font-size:10px;color:#888;margin:4px 0 3px">Restock Bahan</div>
+  ${shiftRestock.map(l=>`<div class="row"><span>${l.bahan||l.nama} (+${l.qty}${l.unit||''})</span><span style="color:#c0392b">-Rp ${fmt(l.amount||0)}</span></div>`).join('')}
+` : ''}
+<div class="row total"><span>Total Pengeluaran</span><span style="color:#c0392b">-Rp ${fmt(totalBelanja)}</span></div>
+<div class="row total" style="font-size:14px"><span>Net Shift</span><span style="color:${netShift>=0?'#27ae60':'#c0392b'}">Rp ${fmt(netShift)}</span></div>` : '';
+
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Laporan Shift</title>
 <style>
   body{font-family:Arial,sans-serif;font-size:12px;color:#111;max-width:360px;margin:0 auto;padding:16px}
@@ -11960,6 +11995,7 @@ ${s.closedBy && s.closedBy !== s.kasir ? `<div class="row"><span>Kasir Tutup</sp
 ${topItems.length>0?`<hr class="divider">
 <div class="section">Top Menu Terjual</div>
 <table>${topItems.map(([n,q],i)=>`<tr><td>#${i+1} ${n}</td><td>${q}x</td></tr>`).join('')}</table>`:''}
+${belanjaSection}
 ${s.closeNotes?`<hr class="divider"><div class="section">Catatan</div><div style="font-size:11px;color:#333">${s.closeNotes}</div>`:''}
 <div class="footer">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
 </body></html>`;
