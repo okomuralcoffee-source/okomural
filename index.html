@@ -1105,7 +1105,7 @@ tr:hover td{background:var(--bg2)}
 .toggle-track::before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:transform .2s,background .2s}
 .toggle-sw input:checked + .toggle-track{background:#1a3a28;border-color:var(--green)}
 .toggle-sw input:checked + .toggle-track::before{transform:translateX(14px);background:var(--green)}
-.attendance-grid{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start}
+.attendance-grid{display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start}
 @media(max-width:900px){.attendance-grid{grid-template-columns:1fr}}
 .attendance-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
 @media(max-width:640px){.attendance-summary{grid-template-columns:repeat(2,1fr)}}
@@ -1113,12 +1113,12 @@ tr:hover td{background:var(--bg2)}
 .att-stat-num{font-size:20px;font-weight:700;letter-spacing:-.5px;margin-bottom:2px}
 .att-stat-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
 .att-stat.hadir .att-stat-num{color:var(--green)}.att-stat.izin .att-stat-num{color:var(--amber)}.att-stat.alpha .att-stat-num{color:var(--red)}.att-stat.libur .att-stat-num{color:var(--text3)}
-.calendar-wrap{background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;display:inline-block}
+.calendar-wrap{background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:10px;width:280px;flex-shrink:0}
 .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
 .cal-header h3{font-size:12px;font-weight:600}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;max-width:320px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;width:100%;max-width:300px}
 .cal-day-label{text-align:center;font-size:9px;color:var(--text3);padding:3px 0;text-transform:uppercase;letter-spacing:.3px}
-.cal-day{width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;position:relative;font-size:11px;color:var(--text2);transition:background .12s}
+.cal-day{aspect-ratio:1;min-width:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;position:relative;font-size:12px;font-weight:500;color:var(--text2);transition:background .12s}
 .cal-day:hover:not(.empty){background:var(--bg2)}.cal-day.empty{cursor:default}
 .cal-day.today{background:var(--bg2);color:var(--accent);font-weight:700;border:1px solid var(--border2)}
 .cal-day.hadir::after,.cal-day.izin::after,.cal-day.alpha::after{content:'';position:absolute;bottom:3px;width:4px;height:4px;border-radius:50%}
@@ -4975,7 +4975,11 @@ function showModule(mod){
   const allRenders={
     'inventory':renderInventory,
     'menu':renderMenuMgmt,
-    'attendance': renderAttendanceModule,
+    'attendance': ()=>{
+      _attViewMonth = new Date().getMonth();
+      _attViewYear  = new Date().getFullYear();
+      renderAttendanceModule();
+    },
     'finance':renderCashRecon,
     'hr':renderHRTable,
     'crm': async () => {
