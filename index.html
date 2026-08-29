@@ -1446,6 +1446,19 @@ async function initSupabaseAuth() {
         } catch(e2) {}
         console.log('[Auth] ✅ Restored from localStorage:', parsed.name);
         goToLauncher();
+        // ── Restore halaman terakhir (hanya sekali saat page load) ────────
+        try {
+          const lastScreen = localStorage.getItem('oko_last_screen');
+          const lastModule = localStorage.getItem('oko_last_module');
+          if(lastScreen && lastScreen !== 'launcher' && lastScreen !== 'login') {
+            setTimeout(() => {
+              showScreen(lastScreen);
+              if(lastScreen === 'app' && lastModule) showModule(lastModule);
+            }, 300);
+          } else if(lastModule) {
+            setTimeout(() => { showScreen('app'); showModule(lastModule); }, 300);
+          }
+        } catch(e) {}
         // ── STEP 2: Refresh Supabase session di background (non-blocking) ──
         supa.auth.getSession().then(({ data: { session } }) => {
           if(session) {
@@ -5072,24 +5085,7 @@ function goToLauncher(){
   loadProductsFromSupabase();
   // Phase 9: init realtime subscriptions
   setTimeout(initRealtimeSubscriptions, 1000);
-  // ── Restore halaman terakhir saat refresh ──────────────────────────────
-  try {
-    const lastScreen = localStorage.getItem('oko_last_screen');
-    const lastModule = localStorage.getItem('oko_last_module');
-    if(lastScreen && lastScreen !== 'launcher' && lastScreen !== 'login') {
-      // Restore ke screen lain (pos, crm, app, dll)
-      setTimeout(() => {
-        showScreen(lastScreen);
-        if(lastScreen === 'app' && lastModule) showModule(lastModule);
-      }, 200);
-    } else if(lastModule) {
-      // Restore ke modul tertentu di app
-      setTimeout(() => {
-        showScreen('app');
-        showModule(lastModule);
-      }, 200);
-    }
-  } catch(e) {}
+  // Last page restore dipanggil dari initSupabaseAuth setelah session di-load
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
 async function doLogout(){
