@@ -4609,8 +4609,16 @@ function isMobile(){return window.innerWidth<=640}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
-  // Simpan screen aktif (kecuali login)
-  if(id !== 'login') try { localStorage.setItem('oko_last_screen', id); } catch(e) {}
+  // Jika ke login → clear semua sisa session agar tidak auto-restore
+  if(id === 'login') {
+    try {
+      localStorage.removeItem('okomural_current_user');
+      localStorage.removeItem('oko_last_screen');
+      localStorage.removeItem('oko_last_module');
+    } catch(e) {}
+  } else {
+    try { localStorage.setItem('oko_last_screen', id); } catch(e) {}
+  }
   // Stop shift timer when leaving POS
   if(id !== 'pos'){ clearInterval(window._shiftTimer); }
   // Close shift modals
