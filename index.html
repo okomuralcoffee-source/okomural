@@ -12982,7 +12982,10 @@ async function loadUsersFromSupabase(){
         <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="openEditUserModal('${e.id}','${e.name}','${roleName}','${e.branch_id||''}','${e.email||''}')">Edit</button>
           <button class="btn btn-secondary btn-sm" onclick="openResetPasswordModal('${e.id}','${e.name}')">🔑</button>
-          ${!isOwner ? `<button class="btn btn-danger btn-sm" onclick="toggleUserActive('${e.id}','${e.name}',true)">Nonaktifkan</button>` : ''}
+          ${!isOwner ? `
+            <button class="btn btn-danger btn-sm" onclick="toggleUserActive('${e.id}','${e.name}',true)">Nonaktifkan</button>
+            <button class="btn btn-danger btn-sm" style="background:var(--red);color:#fff" onclick="openDeleteUserModal('${e.id}','${e.name}','${e.email||''}')">Hapus</button>
+          ` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -13129,7 +13132,47 @@ function toggleUserActive(empId, name, disable){
     }
   );
 }
-// Upsert system_config key-value
+function openDeleteUserModal(empId, name, email){
+  const username = email.split('@')[0] || name;
+  openGModal(
+    '🗑 Hapus User — ' + name,
+    `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:6px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">⚠ Tindakan ini tidak dapat dibatalkan</div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.6">
+        Akun <strong>${name}</strong> (<code>${username}</code>) akan dihapus permanen dari sistem.<br>
+        Data transaksi yang sudah ada tidak akan terhapus.
+      </div>
+    </div>
+    <div class="gfield">
+      <label>Ketik username <strong style="color:var(--red)">${username}</strong> untuk konfirmasi hapus</label>
+      <input id="del-confirm-input" type="text" placeholder="Ketik username di sini..." autocomplete="off"
+        oninput="
+          const btn=document.getElementById('gmodal-save-btn');
+          if(btn) btn.style.opacity=this.value==='${username}'?'1':'0.4';
+        ">
+    </div>`,
+    'Hapus Permanen',
+    async () => {
+      const typed = document.getElementById('del-confirm-input')?.value;
+      if(typed !== username){
+        showToast('error','Username tidak cocok','Ketik username yang benar untuk konfirmasi');
+        return;
+      }
+      try {
+        showToast('info','Menghapus akun...','');
+        await callAdminEdge({ action: 'delete', empId });
+        showToast('success', name + ' berhasil dihapus permanen');
+        logActivity('Settings', 'Hapus user permanen: ' + name + ' (' + username + ')');
+        loadUsersFromSupabase();
+      } catch(e){ showToast('error','Gagal hapus user', e.message); }
+    }
+  );
+  // Set tombol save opacity dimmed saat pertama buka
+  setTimeout(()=>{
+    const btn = document.getElementById('gmodal-save-btn');
+    if(btn){ btn.style.opacity='0.4'; btn.style.background='var(--red)'; btn.style.color='#fff'; }
+  }, 50);
+}
 async function saveSystemConfigToSupabase(key, value){
   try {
     const { error } = await supa
