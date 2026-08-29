@@ -1580,7 +1580,7 @@ async function hydrateUserFromSession(session) {
     <div class="lnc-user-bar">
       <div class="lnc-user-info">
         <div class="lnc-avatar" id="lnc-avatar">BS</div>
-        <div><div class="lnc-uname" id="lnc-uname">Budi Santoso</div><div class="lnc-urole" id="lnc-urole">Owner · HQ Indrapura</div></div>
+        <div><div class="lnc-uname" id="lnc-uname">—</div><div class="lnc-urole" id="lnc-urole">Owner · HQ Indrapura</div></div>
       </div>
       <div class="theme-toggle" onclick="toggleTheme()" title="Ganti tema"></div>
       <button class="lnc-logout-btn" onclick="goToLogin()">← Ganti Akun</button>
@@ -2384,7 +2384,7 @@ async function hydrateUserFromSession(session) {
     <div class="sidebar-bottom">
       <div class="sidebar-user">
         <div class="sidebar-avatar" id="app-avatar">BS</div>
-        <div><div class="sidebar-user-name" id="app-uname">Budi Santoso</div><div class="sidebar-user-role" id="app-urole">Owner</div></div>
+        <div><div class="sidebar-user-name" id="app-uname">—</div><div class="sidebar-user-role" id="app-urole">Owner</div></div>
       </div>
       <div class="sidebar-logout" onclick="goToLauncher();closeSidebar()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>← Launcher
@@ -4289,7 +4289,7 @@ const INV=[
   {name:'Roti Tawar',qty:3,unit:'loaf',min:5,status:'critical'},
 ];
 const ACCOUNTS={
-  'owner@okomural.com':{name:'Budi Santoso',init:'BS',role:'Owner',access:'launcher'},
+  'owner@okomural.com':{name:'Habib Dwi Zakaria',init:'HZ',role:'Owner',access:'launcher'},
   'kasir@okomural.com':{name:'Rizki Pratama',init:'RP',role:'Kasir',access:'pos'},
 };
 const STAFF_DB={
@@ -4333,7 +4333,7 @@ let CABANG_DB = [
   {id:'CAB-003', nama:'Cart #2 Petapahan', alamat:'Petapahan',    telp:'', status:'aktif', type:'cart'},
 ];
 let KARYAWAN_DB = [
-  {id:'EMP-001',nama:'Budi Santoso',kode:'OKO-001',posisi:'Owner',gaji:0,hp:'08111111111',email:'owner@okomural.com',status:'aktif'},
+  {id:'EMP-001',nama:'Habib Dwi Zakaria',kode:'OKO-001',posisi:'Owner',gaji:0,hp:'08111111111',email:'adminoko@okomural.internal',status:'aktif'},
   {id:'EMP-002',nama:'Dewi Sartika',kode:'OKO-002',posisi:'Manajer',gaji:6500000,hp:'08222222222',email:'dewi@okomural.com',status:'aktif'},
   {id:'EMP-003',nama:'Rizki Pratama',kode:'OKO-003',posisi:'Kasir',gaji:4200000,hp:'08333333333',email:'kasir@okomural.com',status:'aktif'},
   {id:'EMP-004',nama:'Anisa Nurul',kode:'OKO-004',posisi:'Barista',gaji:3800000,hp:'08444444444',email:'anisa@okomural.com',status:'izin'},
@@ -5094,6 +5094,8 @@ async function doLogout(){
   try { await supa.auth.signOut(); } catch(e) { console.warn('signOut error:', e.message); }
   cleanupRealtimeSubscriptions();
   currentUser = null;
+  activeBranch = null;
+  activeShift  = null;
   cart = [];
   cartTotal = 0;
   SESSION.transactions = [];
@@ -5101,7 +5103,12 @@ async function doLogout(){
     localStorage.removeItem('okomural_current_user');
     localStorage.removeItem('oko_last_screen');
     localStorage.removeItem('oko_last_module');
+    // Clear semua shift per cabang
+    ['CAB-001','CAB-002','CAB-003'].forEach(c => localStorage.removeItem('oko_shift_'+c));
   } catch(e) {}
+  // Reset nama di UI
+  const nameEls = ['lnc-uname','app-uname','lnc-urole','app-urole'];
+  nameEls.forEach(id => { const el=document.getElementById(id); if(el) el.textContent='—'; });
   showScreen('login');
   showToast('info','Keluar','Sesi berakhir. Sampai jumpa!');
 }
