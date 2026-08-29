@@ -1434,7 +1434,9 @@ async function initSupabaseAuth() {
   // ── STEP 1: Cek apakah user sengaja logout sebelumnya ────────────────
   if (localStorage.getItem('oko_logged_out') === '1') {
     localStorage.removeItem('oko_logged_out');
-    console.log('[Auth] User logged out intentionally → show login');
+    console.log('[Auth] User logged out intentionally → signOut Supabase + show login');
+    // Pastikan Supabase session juga di-clear agar tidak restore di refresh berikutnya
+    try { await supa.auth.signOut(); } catch(e) {}
     showScreen('login');
     return;
   }
