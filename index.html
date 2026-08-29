@@ -2788,7 +2788,7 @@ async function hydrateUserFromSession(session) {
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Nama</th><th>Role</th><th>Cabang</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Nama Lengkap</th><th>Username / Email Login</th><th>Role</th><th>Cabang</th><th>Status</th><th></th></tr></thead>
             <tbody id="user-mgmt-tbody">
               <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">
                 <div style="font-size:12px">Memuat data user...</div>
@@ -9085,21 +9085,29 @@ function renderSettingsCabang(){
   </tr>`).join('');
 }
 function renderSettingsUser(){
-  const tbody=document.querySelector('#settings-user tbody');
-  if(!tbody)return;
-  const roleColor={'Owner':'badge-green','Manajer':'badge-blue','Kasir':'badge-gray','Barista':'badge-gray'};
-  tbody.innerHTML=USER_DB.map((u,i)=>{
-    const display = u.username||u.nama;
-    const loginEmail = u.email||u.username+'@okomural.internal';
-    const isDefault = u.username==='AdminOKO'||u.username==='TeamOKO';
+  const tbody = document.getElementById('user-mgmt-tbody') || document.querySelector('#settings-user tbody');
+  if(!tbody) return;
+  const roleColor = {'Owner':'badge-green','Manajer':'badge-blue','Kasir':'badge-gray','Barista':'badge-gray'};
+  tbody.innerHTML = USER_DB.map((u,i) => {
+    const nama     = u.nama || u.name || '—';
+    const username = u.username || u.email?.split('@')[0] || '—';
+    const loginFmt = username + '@okomural.internal';
+    const isDefault = username === 'AdminOKO';
+    const cabang = u.branch || u.cabang || 'Semua Cabang';
+    const status = u.status || u.aktif !== false ? 'aktif' : 'nonaktif';
     return `<tr>
-      <td style="font-weight:600">${u.nama}</td>
-      <td style="font-family:monospace;font-size:11px;color:var(--text3)">${display}</td>
+      <td style="font-weight:600">${nama}</td>
+      <td>
+        <div style="font-family:monospace;font-size:11px;color:var(--text);font-weight:600">${username}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:1px">${loginFmt}</div>
+      </td>
       <td><span class="badge ${roleColor[u.role]||'badge-gray'}">${u.role}</span></td>
-      <td style="font-size:11px;color:var(--text3)">${u.status||'aktif'}</td>
-      <td style="display:flex;gap:4px">
-        <button class="btn btn-secondary btn-sm" onclick="openEditUser(${i})">Edit</button>
-        ${!isDefault?`<button class="btn btn-danger btn-sm" onclick="deleteUser(${i})">Hapus</button>`:''}
+      <td style="font-size:11px;color:var(--text3)">${cabang}</td>
+      <td><span class="badge ${status==='aktif'?'badge-green':'badge-gray'}">${status}</span></td>
+      <td style="white-space:nowrap;display:flex;gap:4px">
+        <button class="btn btn-secondary btn-sm" onclick="openEditUser(${i})" title="Edit data">Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="openResetPassword(${i})" title="Reset password" style="padding:4px 8px">🔑</button>
+        ${!isDefault ? `<button class="btn btn-danger btn-sm" onclick="toggleUserActive(${i},'${status}')">${status==='aktif'?'Nonaktifkan':'Aktifkan'}</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -12957,8 +12965,17 @@ async function loadUsersFromSupabase(){
       const roleName   = e.roles?.name||'—';
       const branchName = e.branches?.name||'Semua Cabang';
       const isOwner    = roleName === 'owner';
+      // Email login: ambil dari auth.users via e.email jika ada, fallback ke nama@okomural.internal
+      const loginEmail = e.email || (e.name?.toLowerCase().replace(/\s+/g,'')||'user') + '@okomural.internal';
+      const displayName = e.name || '—';
       return `<tr>
-        <td style="font-weight:500">${e.name}</td>
+        <td>
+          <div style="font-weight:600;color:var(--text)">${displayName}</div>
+        </td>
+        <td>
+          <div style="font-family:monospace;font-size:11px;color:var(--text);font-weight:500">${loginEmail.split('@')[0]}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">${loginEmail}</div>
+        </td>
         <td><span class="badge ${roleColor[roleName]||'badge-gray'}">${roleName.charAt(0).toUpperCase()+roleName.slice(1)}</span></td>
         <td style="font-size:11px;color:var(--text3)">${branchName}</td>
         <td><span class="badge badge-green" style="font-size:10px">Aktif</span></td>
