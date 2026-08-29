@@ -1458,13 +1458,20 @@ async function initSupabaseAuth() {
         try {
           const lastScreen = localStorage.getItem('oko_last_screen');
           const lastModule = localStorage.getItem('oko_last_module');
-          if(lastScreen && lastScreen !== 'launcher' && lastScreen !== 'login') {
-            setTimeout(() => {
-              showScreen(lastScreen);
-              if(lastScreen === 'app' && lastModule) showModule(lastModule);
-            }, 300);
-          } else if(lastModule) {
+          if(!lastScreen || lastScreen === 'login') {
+            // Tidak ada last screen → tetap di launcher (sudah tampil)
+          } else if(lastScreen === 'launcher') {
+            // Tetap di launcher — sudah di sana, tidak perlu apa-apa
+            console.log('[Auth] Restore: launcher');
+          } else if(lastScreen === 'app' && lastModule) {
+            // Restore ke modul tertentu di app
             setTimeout(() => { showScreen('app'); showModule(lastModule); }, 300);
+          } else if(lastScreen === 'app') {
+            // Restore ke app tanpa modul spesifik
+            setTimeout(() => { showScreen('app'); }, 300);
+          } else {
+            // Screen lain (pos, crm, dll)
+            setTimeout(() => { showScreen(lastScreen); }, 300);
           }
         } catch(e) {}
         // ── STEP 2: Refresh Supabase session di background (non-blocking) ──
@@ -4609,7 +4616,7 @@ function isMobile(){return window.innerWidth<=640}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
-  // Jika ke login → clear semua sisa session agar tidak auto-restore
+  // Jika ke login → clear sisa session
   if(id === 'login') {
     try {
       localStorage.removeItem('okomural_current_user');
@@ -4617,6 +4624,7 @@ function showScreen(id){
       localStorage.removeItem('oko_last_module');
     } catch(e) {}
   } else {
+    // Simpan screen aktif termasuk 'launcher'
     try { localStorage.setItem('oko_last_screen', id); } catch(e) {}
   }
   // Stop shift timer when leaving POS
