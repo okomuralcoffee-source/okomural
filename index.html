@@ -12979,11 +12979,11 @@ async function loadUsersFromSupabase(){
         <td><span class="badge ${roleColor[roleName]||'badge-gray'}">${roleName.charAt(0).toUpperCase()+roleName.slice(1)}</span></td>
         <td style="font-size:11px;color:var(--text3)">${branchName}</td>
         <td><span class="badge badge-green" style="font-size:10px">Aktif</span></td>
-        <td style="white-space:nowrap">${!isOwner?`
-          <button class="btn btn-secondary btn-sm" onclick="openEditUserModal('${e.id}','${e.name}','${roleName}','${e.branch_id||''}')">Edit</button>
-          <button class="btn btn-secondary btn-sm" style="margin-left:4px" onclick="openResetPasswordModal('${e.id}','${e.name}')">🔑</button>
-          <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="toggleUserActive('${e.id}','${e.name}',true)">Nonaktifkan</button>
-        `:'<span style="font-size:10px;color:var(--text3)">Owner</span>'}</td>
+        <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="openEditUserModal('${e.id}','${e.name}','${roleName}','${e.branch_id||''}','${e.email||''}')">Edit</button>
+          <button class="btn btn-secondary btn-sm" onclick="openResetPasswordModal('${e.id}','${e.name}')">🔑</button>
+          ${!isOwner ? `<button class="btn btn-danger btn-sm" onclick="toggleUserActive('${e.id}','${e.name}',true)">Nonaktifkan</button>` : ''}
+        </td>
       </tr>`;
     }).join('');
   } catch(e){
@@ -12995,13 +12995,27 @@ async function loadUsersFromSupabase(){
 function openTambahUser(){
   const cabOpts = CABANG_DB.map(c=>`<option value="${c.id}">${c.nama}</option>`).join('');
   openGModal('Tambah User Baru',
-    `<div class="gfield"><label>Nama Lengkap</label><input id="nu-name" type="text" placeholder="Nama karyawan..."></div>
-    <div class="gfield"><label>Email</label><input id="nu-email" type="email" placeholder="email@okomural.com"></div>
+    `<div class="gfield-row">
+      <div class="gfield"><label>Nama Lengkap</label><input id="nu-name" type="text" placeholder="Nama karyawan..."></div>
+      <div class="gfield"><label>Username Login</label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input id="nu-username" type="text" placeholder="contoh: BudiHQ" style="flex:1" oninput="
+            const v=this.value.replace(/[^a-zA-Z0-9]/g,'');
+            this.value=v;
+            document.getElementById('nu-email-preview').textContent=v?v+'@okomural.internal':'—';
+          ">
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">Email login: <span id="nu-email-preview" style="color:var(--green)">—</span></div>
+      </div>
+    </div>
     <div class="gfield"><label>Password</label><input id="nu-pass" type="password" placeholder="Minimal 8 karakter"></div>
     <div class="gfield-row">
       <div class="gfield"><label>Role</label>
         <select id="nu-role" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
-          <option value="kasir">Kasir</option><option value="barista">Barista</option><option value="manajer">Manajer</option>
+          <option value="kasir">Kasir</option>
+          <option value="barista">Barista</option>
+          <option value="manajer">Manajer</option>
+          <option value="owner">Owner</option>
         </select>
       </div>
       <div class="gfield"><label>Cabang</label>
@@ -13012,36 +13026,48 @@ function openTambahUser(){
     </div>`,
     'Buat Akun',
     async () => {
-      const name=document.getElementById('nu-name').value.trim();
-      const email=document.getElementById('nu-email').value.trim();
-      const pass=document.getElementById('nu-pass').value;
-      const role=document.getElementById('nu-role').value;
-      const branchId=document.getElementById('nu-branch').value;
-      if(!name){showToast('error','Nama wajib diisi');return;}
-      if(!email){showToast('error','Email wajib diisi');return;}
-      if(pass.length<8){showToast('error','Password minimal 8 karakter');return;}
+      const name     = document.getElementById('nu-name').value.trim();
+      const username = document.getElementById('nu-username').value.trim().replace(/[^a-zA-Z0-9]/g,'');
+      const pass     = document.getElementById('nu-pass').value;
+      const role     = document.getElementById('nu-role').value;
+      const branchId = document.getElementById('nu-branch').value;
+      if(!name)    { showToast('error','Nama lengkap wajib diisi'); return; }
+      if(!username){ showToast('error','Username login wajib diisi'); return; }
+      if(pass.length < 8){ showToast('error','Password minimal 8 karakter'); return; }
+      const email = username + '@okomural.internal';
       try {
         showToast('info','Membuat akun...','');
-        await callAdminEdge({action:'create',name,email,password:pass,role,branchId});
-        showToast('success',name+' berhasil ditambahkan',role);
-        logActivity('Settings','Tambah user: '+name+' ('+role+')');
+        await callAdminEdge({action:'create', name, email, password:pass, role, branchId});
+        showToast('success', name+' berhasil ditambahkan', role+' · login: '+username);
+        logActivity('Settings','Tambah user: '+name+' ('+role+') username: '+username);
         loadUsersFromSupabase();
-      } catch(e){showToast('error','Gagal membuat akun',e.message);}
+      } catch(e){ showToast('error','Gagal membuat akun', e.message); }
     }
   );
 }
 
-function openEditUserModal(empId, name, role, branchId){
+function openEditUserModal(empId, name, role, branchId, email=''){
+  const currentUsername = email.split('@')[0] || name;
   const cabOpts = [
     '<option value="">Semua Cabang</option>',
     ...CABANG_DB.map(c=>`<option value="${BRANCH_LOCAL_TO_UUID[c.id]||c.id}"${(BRANCH_LOCAL_TO_UUID[c.id]||c.id)===branchId?' selected':''}>${c.nama}</option>`)
   ].join('');
   openGModal('Edit User — '+name,
-    `<div class="gfield"><label>Nama</label><input id="eu-name" type="text" value="${name}"></div>
+    `<div class="gfield-row">
+      <div class="gfield"><label>Nama Lengkap</label><input id="eu-name" type="text" value="${name}"></div>
+      <div class="gfield"><label>Username Login</label>
+        <input id="eu-username" type="text" value="${currentUsername}" oninput="
+          const v=this.value.replace(/[^a-zA-Z0-9]/g,'');
+          this.value=v;
+          document.getElementById('eu-email-preview').textContent=v?v+'@okomural.internal':'—';
+        ">
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">Email login: <span id="eu-email-preview" style="color:var(--green)">${email||currentUsername+'@okomural.internal'}</span></div>
+      </div>
+    </div>
     <div class="gfield-row">
       <div class="gfield"><label>Role</label>
         <select id="eu-role" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">
-          ${['kasir','barista','manajer'].map(r=>`<option value="${r}"${r===role?' selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
+          ${['kasir','barista','manajer','owner'].map(r=>`<option value="${r}"${r===role?' selected':''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`).join('')}
         </select>
       </div>
       <div class="gfield"><label>Cabang</label>
@@ -13050,17 +13076,21 @@ function openEditUserModal(empId, name, role, branchId){
         </select>
       </div>
     </div>`,
-    'Simpan',
+    'Simpan Perubahan',
     async () => {
-      const newName=document.getElementById('eu-name').value.trim();
-      const newRole=document.getElementById('eu-role').value;
-      const newBranch=document.getElementById('eu-branch').value;
+      const newName     = document.getElementById('eu-name').value.trim();
+      const newUsername = document.getElementById('eu-username').value.trim().replace(/[^a-zA-Z0-9]/g,'');
+      const newRole     = document.getElementById('eu-role').value;
+      const newBranch   = document.getElementById('eu-branch').value;
+      if(!newName)    { showToast('error','Nama wajib diisi'); return; }
+      if(!newUsername){ showToast('error','Username wajib diisi'); return; }
+      const newEmail = newUsername + '@okomural.internal';
       try {
-        await callAdminEdge({action:'update',employeeId:empId,name:newName,role:newRole,branchId:newBranch});
-        showToast('success',newName+' diperbarui');
-        logActivity('Settings','Edit user: '+newName);
+        await callAdminEdge({action:'update', empId, name:newName, email:newEmail, role:newRole, branchId:newBranch});
+        showToast('success', newName+' diperbarui', 'Login: '+newUsername);
+        logActivity('Settings','Edit user: '+newName+' username: '+newUsername);
         loadUsersFromSupabase();
-      } catch(e){showToast('error','Gagal update',e.message);}
+      } catch(e){ showToast('error','Gagal update', e.message); }
     }
   );
 }
@@ -13071,15 +13101,15 @@ function openResetPasswordModal(empId, name){
     <div class="gfield"><label>Konfirmasi</label><input id="rp-pass2" type="password" placeholder="Ulangi password baru"></div>`,
     'Reset Password',
     async () => {
-      const pass=document.getElementById('rp-pass').value;
-      const pass2=document.getElementById('rp-pass2').value;
-      if(pass.length<8){showToast('error','Password minimal 8 karakter');return;}
-      if(pass!==pass2){showToast('error','Password tidak cocok');return;}
+      const pass  = document.getElementById('rp-pass').value;
+      const pass2 = document.getElementById('rp-pass2').value;
+      if(pass.length < 8){ showToast('error','Password minimal 8 karakter'); return; }
+      if(pass !== pass2) { showToast('error','Password tidak cocok'); return; }
       try {
-        await callAdminEdge({action:'reset_password',employeeId:empId,newPassword:pass});
-        showToast('success','Password '+name+' direset');
+        await callAdminEdge({action:'reset_password', empId, newPassword:pass});
+        showToast('success','Password '+name+' berhasil direset');
         logActivity('Settings','Reset password: '+name);
-      } catch(e){showToast('error','Gagal reset password',e.message);}
+      } catch(e){ showToast('error','Gagal reset password', e.message); }
     }
   );
 }
@@ -13087,15 +13117,15 @@ function openResetPasswordModal(empId, name){
 function toggleUserActive(empId, name, disable){
   openConfirm(
     (disable?'Nonaktifkan':'Aktifkan')+' User',
-    name+' akan '+(disable?'dinonaktifkan':'diaktifkan')+'. Lanjutkan?',
+    name+' akan '+(disable?'dinonaktifkan dan tidak bisa login':'diaktifkan kembali')+'. Lanjutkan?',
     disable?'Nonaktifkan':'Aktifkan',
     async () => {
       try {
-        await callAdminEdge({action:'update',employeeId:empId,disabled:disable});
-        showToast('success',name+(disable?' dinonaktifkan':' diaktifkan'));
+        await callAdminEdge({action:'toggle_active', empId, disable});
+        showToast('success', name+(disable?' dinonaktifkan':' diaktifkan'));
         logActivity('Settings',(disable?'Nonaktifkan':'Aktifkan')+' user: '+name);
         loadUsersFromSupabase();
-      } catch(e){showToast('error','Gagal',e.message);}
+      } catch(e){ showToast('error','Gagal', e.message); }
     }
   );
 }
