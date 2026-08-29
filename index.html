@@ -1431,82 +1431,69 @@ function getStaffUUID() {
 
 // ── initSupabaseAuth — dipanggil saat DOMContentLoaded ───────────────────
 async function initSupabaseAuth() {
-  // ── STEP 1: Cek apakah user sengaja logout sebelumnya ────────────────
+
+  // ── Clear Supabase session jika ada flag logged_out ───────────────────
   if (localStorage.getItem('oko_logged_out') === '1') {
     localStorage.removeItem('oko_logged_out');
-    console.log('[Auth] User logged out intentionally → signOut Supabase + show login');
-    // Pastikan Supabase session juga di-clear agar tidak restore di refresh berikutnya
-    try { await supa.auth.signOut(); } catch(e) {}
+    try { await supa.auth.signOut({ scope: 'local' }); } catch(e) {}
     showScreen('login');
     return;
   }
 
-  // ── STEP 1: Cek localStorage DULU (instan, tidak perlu network) ──────
-  try {
-    const saved = localStorage.getItem('okomural_current_user');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && parsed.name && parsed.role) {
-        currentUser = parsed;
-        // Restore activeShift
-        const cabId = activeBranch?.id || parsed.branchId || 'CAB-001';
-        try {
-          const savedShift = localStorage.getItem('oko_shift_' + cabId);
-          if(savedShift) activeShift = JSON.parse(savedShift);
-        } catch(e2) {}
-        console.log('[Auth] ✅ Restored from localStorage:', parsed.name);
-        goToLauncher();
-        // ── Restore halaman terakhir (hanya sekali saat page load) ────────
-        try {
-          const lastScreen = localStorage.getItem('oko_last_screen');
-          const lastModule = localStorage.getItem('oko_last_module');
-          if(!lastScreen || lastScreen === 'login') {
-            // Tidak ada last screen → tetap di launcher (sudah tampil)
-          } else if(lastScreen === 'launcher') {
-            // Tetap di launcher — sudah di sana, tidak perlu apa-apa
-            console.log('[Auth] Restore: launcher');
-          } else if(lastScreen === 'app' && lastModule) {
-            // Restore ke modul tertentu di app
-            setTimeout(() => { showScreen('app'); showModule(lastModule); }, 300);
-          } else if(lastScreen === 'app') {
-            // Restore ke app tanpa modul spesifik
-            setTimeout(() => { showScreen('app'); }, 300);
-          } else {
-            // Screen lain (pos, crm, dll)
-            setTimeout(() => { showScreen(lastScreen); }, 300);
-          }
-        } catch(e) {}
-        // ── STEP 2: Refresh Supabase session di background (non-blocking) ──
-        supa.auth.getSession().then(({ data: { session } }) => {
-          if(session) {
-            currentUser.supaAuthId = session.user.id;
-            localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
-            console.log('[Auth] Supabase session refreshed in background');
-          }
-        }).catch(e => console.warn('[Auth] Background session refresh error:', e.message));
-        return;
-      }
-    }
-  } catch(e) { console.warn('[Auth] localStorage restore error:', e.message); }
-
-  // ── STEP 3: Tidak ada localStorage → coba Supabase getSession ────────
-  try {
-    const sessionPromise = supa.auth.getSession();
-    const timeoutPromise = new Promise(resolve =>
-      setTimeout(() => resolve({ data: { session: null } }), 3000)
-    );
-    const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
-    if (session) {
-      const ok = await hydrateUserFromSession(session);
-      if (ok) { console.log('[Auth] ✅ Restored from Supabase session'); return; }
-    }
-  } catch(e) {
-    console.warn('[Auth] getSession error:', e.message);
+  // ── ATURAN UTAMA: auto-login HANYA jika okomural_current_user ada ─────
+  // Supabase session saja tidak cukup — cegah bypass lewat Supabase cookie
+  const saved = localStorage.getItem('okomural_current_user');
+  if (!saved) {
+    try { await supa.auth.signOut({ scope: 'local' }); } catch(e) {}
+    console.log('[Auth] No local session → show login');
+    showScreen('login');
+    return;
   }
 
-  console.log('[Auth] No session → show login');
-  showScreen('login');
+  // ── Restore dari localStorage ─────────────────────────────────────────
+  try {
+    const parsed = JSON.parse(saved);
+    if (!parsed || !parsed.name || !parsed.role) {
+      localStorage.removeItem('okomural_current_user');
+      showScreen('login');
+      return;
+    }
+    currentUser = parsed;
+    const cabId = activeBranch?.id || parsed.branchId || 'CAB-001';
+    try {
+      const savedShift = localStorage.getItem('oko_shift_' + cabId);
+      if(savedShift) activeShift = JSON.parse(savedShift);
+    } catch(e2) {}
+    console.log('[Auth] ✅ Restored:', parsed.name);
+    goToLauncher();
+    // Restore halaman terakhir
+    try {
+      const lastScreen = localStorage.getItem('oko_last_screen');
+      const lastModule = localStorage.getItem('oko_last_module');
+      if(!lastScreen || lastScreen === 'login' || lastScreen === 'launcher') {
+        // launcher atau tidak ada → tetap di launcher
+      } else if(lastScreen === 'app' && lastModule) {
+        setTimeout(() => { showScreen('app'); showModule(lastModule); }, 300);
+      } else if(lastScreen === 'app') {
+        setTimeout(() => { showScreen('app'); }, 300);
+      } else {
+        setTimeout(() => { showScreen(lastScreen); }, 300);
+      }
+    } catch(e) {}
+    // Refresh Supabase session di background
+    supa.auth.getSession().then(({ data: { session } }) => {
+      if(session) {
+        currentUser.supaAuthId = session.user.id;
+        localStorage.setItem('okomural_current_user', JSON.stringify(currentUser));
+      }
+    }).catch(() => {});
+  } catch(e) {
+    console.warn('[Auth] parse error:', e.message);
+    localStorage.removeItem('okomural_current_user');
+    showScreen('login');
+  }
 }
+
 
 // ── hydrateUserFromSession — bangun currentUser dari Supabase session ─────
 async function hydrateUserFromSession(session) {
