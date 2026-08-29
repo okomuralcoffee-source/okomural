@@ -1431,6 +1431,14 @@ function getStaffUUID() {
 
 // ── initSupabaseAuth — dipanggil saat DOMContentLoaded ───────────────────
 async function initSupabaseAuth() {
+  // ── STEP 1: Cek apakah user sengaja logout sebelumnya ────────────────
+  if (localStorage.getItem('oko_logged_out') === '1') {
+    localStorage.removeItem('oko_logged_out');
+    console.log('[Auth] User logged out intentionally → show login');
+    showScreen('login');
+    return;
+  }
+
   // ── STEP 1: Cek localStorage DULU (instan, tidak perlu network) ──────
   try {
     const saved = localStorage.getItem('okomural_current_user');
@@ -5103,8 +5111,8 @@ async function doLogout(){
     localStorage.removeItem('okomural_current_user');
     localStorage.removeItem('oko_last_screen');
     localStorage.removeItem('oko_last_module');
-    // Clear semua shift per cabang
     ['CAB-001','CAB-002','CAB-003'].forEach(c => localStorage.removeItem('oko_shift_'+c));
+    localStorage.setItem('oko_logged_out', '1'); // flag: user sengaja logout
   } catch(e) {}
   // Reset nama di UI
   const nameEls = ['lnc-uname','app-uname','lnc-urole','app-urole'];
