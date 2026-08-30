@@ -4705,11 +4705,12 @@ function showScreen(id){
     const el = document.getElementById(mid);
     if(el) el.style.display = 'none';
   });
-  // Overlays pakai .open class
+  // Overlays pakai .open class — receipt-modal-overlay TIDAK di-close di sini
+  // (receipt harus tetap muncul setelah checkout selesai)
   ['checkout-modal','qris-overlay','confirm-overlay',
    'modifier-overlay','bulk-modal-overlay','belanja-overlay','wizard-overlay',
    'split-overlay','tx-history-overlay','ob-panel-overlay','ob-modal-overlay',
-   'receipt-modal-overlay','gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay'
+   'gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay'
   ].forEach(oid=>{
     const el=document.getElementById(oid);
     if(el) el.classList.remove('open');
