@@ -5153,6 +5153,8 @@ function goToLauncher(){
   loadProductsFromSupabase();
   // Phase 9: init realtime subscriptions
   setTimeout(initRealtimeSubscriptions, 1000);
+  // Keep-alive: ping Edge Function setiap 4 menit agar tidak cold start
+  startEdgeFunctionKeepAlive();
   // Last page restore dipanggil dari initSupabaseAuth setelah session di-load
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
@@ -12436,7 +12438,35 @@ async function saveKaryawanToSupabase(karyawan){
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
-// ── AUTO BACKUP GOOGLE DRIVE v2 ───────────────────────────────────────────
+// ── EDGE FUNCTION KEEP-ALIVE ─────────────────────────────────────────────────
+let _keepAliveTimer = null;
+
+function startEdgeFunctionKeepAlive(){
+  // Clear timer lama jika ada
+  if(_keepAliveTimer) clearInterval(_keepAliveTimer);
+  // Ping setiap 4 menit (240.000ms) agar Edge Function tidak cold start
+  _keepAliveTimer = setInterval(async () => {
+    if(!currentUser?.supaAuthId) return; // skip jika belum login
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if(!session) return;
+      // Ping ringan ke admin-users Edge Function
+      fetch(EDGE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
+        body: JSON.stringify({ action: 'ping' }),
+      }).catch(() => {}); // fire-and-forget, ignore error
+      console.log('[KeepAlive] Edge Function pinged');
+    } catch(e) {}
+  }, 4 * 60 * 1000); // 4 menit
+  console.log('[KeepAlive] Started — ping every 4 minutes');
+}
+
+function stopEdgeFunctionKeepAlive(){
+  if(_keepAliveTimer){ clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
+}
+
+// ── AUTO BACKUP GOOGLE DRIVE v2 ───────────────────────────────────────────────
 
 const BACKUP_EDGE_URL = 'https://uutkxrsalpzfvfjtsnoq.supabase.co/functions/v1/auto-backup';
 
