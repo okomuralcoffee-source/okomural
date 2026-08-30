@@ -2779,7 +2779,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'backup');loadBackupDashboard()">☁️ Auto Backup</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
-      <div id="settings-cabang" style="">
+      <div id="settings-cabang">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">Cabang &amp; Outlet</div>
         <div class="table-wrap" style="margin-bottom:14px">
           <table><thead><tr><th>Nama</th><th>Alamat</th><th>Status</th><th></th></tr></thead><tbody>
@@ -5289,11 +5289,10 @@ function showModule(mod){
     // 'purchase-orders' → handled by Override 2 (renderPOList)
     // 'sales-tracking'  → handled by Override 2 (setSalesDateRange → renderSalesTracking)
     'settings': async ()=>{
+      // Reset ke tab pertama (Cabang) dan hide semua panel lain
+      const firstTab = document.querySelector('.settings-nav .s-item');
+      if(firstTab) switchSettings(firstTab, 'cabang');
       renderSettingsCabang&&renderSettingsCabang();
-      renderKuponList&&renderKuponList();
-      // Load users dari Supabase via Edge Function lalu render
-      if(typeof loadUsersFromSupabase === 'function') await loadUsersFromSupabase();
-      else if(typeof renderSettingsUser === 'function') renderSettingsUser();
     },
     'live-dashboard':renderLiveDashboard,
     'activity-log':  renderActivityLog,
