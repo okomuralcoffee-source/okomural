@@ -13239,7 +13239,7 @@ function openOpexModal(id){
       </select>
     </div>`,
     edit ? 'Simpan Perubahan' : 'Catat Pengeluaran',
-    () => {
+    async () => {
       const kat  = document.getElementById('opex-kat').value;
       const ket  = document.getElementById('opex-ket').value.trim();
       const nom  = parseInt(document.getElementById('opex-nom').value) || 0;
@@ -13256,7 +13256,8 @@ function openOpexModal(id){
         showToast('success', 'Pengeluaran diperbarui', kat + ' · ' + 'Rp ' + nom.toLocaleString('id'));
         logActivity('OPEX', 'Edit: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
         // ── SUPABASE Phase 7: update ─────────────────────────────────────
-        saveExpenseToSupabase(entry, true);
+        await saveExpenseToSupabase(entry, true);
+        showToast('success', 'Pengeluaran diperbarui', kat + ' · Rp ' + nom.toLocaleString('id'));
       } else {
         const newEntry = {
           id:          'OPX-' + Date.now(),
@@ -13268,14 +13269,14 @@ function openOpexModal(id){
           kasir:       currentUser?.name || '—',
           createdAt:   new Date().toISOString(),
         };
+        const supaId = await saveExpenseToSupabase(newEntry, false);
+        if(supaId) newEntry.supaId = supaId;
         OPEX_DB.push(newEntry);
         showToast('success', 'Pengeluaran dicatat', kat + ' · Rp ' + nom.toLocaleString('id'));
         logActivity('OPEX', 'Catat: ' + ket + ' · Rp ' + nom.toLocaleString('id'));
-        // ── SUPABASE Phase 7: catat baru ─────────────────────────────────
-        saveExpenseToSupabase(newEntry, false).then(supaId => {
-          if(supaId){ newEntry.supaId = supaId; saveOPEX(); }
-        });
       }
+      // Reload dari Supabase → UI selalu sync
+      await loadExpensesFromSupabase();
       saveOPEX();
       renderExpensesModule();
     }
