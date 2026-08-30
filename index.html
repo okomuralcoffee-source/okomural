@@ -8371,6 +8371,8 @@ function toggleMenuAvailable(id, val){
   renderMenuMgmt();
   renderMenuGrid();
   showToast(val?'success':'info', item.name, val?'Produk diaktifkan':'Produk dinonaktifkan');
+  // Sync ke Supabase
+  if(item.supaId) toggleProductAvailable(item.supaId, val, item.name);
 }
 function renderBarChart(){const data=[{d:'Sen',v:3800},{d:'Sel',v:4200},{d:'Rab',v:3600},{d:'Kam',v:5100},{d:'Jum',v:6200},{d:'Sab',v:7400},{d:'Min',v:4200}],max=Math.max(...data.map(d=>d.v));const _bc=document.getElementById('bar-chart');if(!_bc)return;_bc.innerHTML=data.map(d=>'<div class="bar-day"><div class="bar-fill" style="height:'+Math.round((d.v/max)*100)+'%" title="Rp '+d.v.toLocaleString('id')+'"></div><div class="bar-day-label">'+d.d+'</div></div>').join('')}
 // ── C4: ATTENDANCE MODULE — Compact Calendar + Live Table ─────────────────
@@ -8745,7 +8747,14 @@ function openProdukModal(item){
 function openEditProduk(id){const item=MENU.find(m=>m.id===id);if(item)openProdukModal(item);}
 function confirmHapusProduk(id){
   const item=MENU.find(m=>m.id===id);if(!item)return;
-  openConfirm('Hapus Produk','"'+item.name+'" akan dihapus dari menu. Tidak bisa dibatalkan.','Hapus',()=>{
+  openConfirm('Hapus Produk','"'+item.name+'" akan dihapus dari menu. Tidak bisa dibatalkan.','Hapus',async ()=>{
+    // Hapus dari Supabase dulu
+    if(item.supaId && currentUser?.supaAuthId){
+      try {
+        const { error } = await supa.from('products').delete().eq('id', item.supaId);
+        if(error){ showToast('error','Gagal hapus dari Supabase', error.message); return; }
+      } catch(e){ showToast('error','Error', e.message); return; }
+    }
     MENU.splice(MENU.indexOf(item),1);
     renderMenuMgmt();
     renderMenuGrid();
@@ -12090,16 +12099,28 @@ async function saveProdukToSupabase(item, isEdit){
     description:item.description||'',
   };
   try {
+    // Jika edit tapi supaId kosong → cari dari Supabase by name
+    if(isEdit && !item.supaId){
+      const { data: found } = await supa.from('products').select('id').eq('name', item.name).maybeSingle();
+      if(found?.id) item.supaId = found.id;
+    }
     if(isEdit && item.supaId){
       const { error } = await supa.from('products').update(payload).eq('id', item.supaId);
       if(error) console.warn('[Phase4] product update error:', error.message);
-      else console.log('[Phase4] Product updated:', item.name);
-    } else if(!item.supaId){
+      else {
+        console.log('[Phase4] Product updated:', item.name);
+        // Reload MENU dari Supabase setelah update
+        await loadProductsFromSupabase();
+        renderMenuMgmt(); renderMenuGrid();
+      }
+    } else if(!isEdit && !item.supaId){
       const { data, error } = await supa.from('products').insert(payload).select('id').single();
       if(error){ console.warn('[Phase4] product insert error:', error.message); return; }
       item.supaId = data.id;
       PRODUCT_UUID_MAP[item.id] = data.id;
       console.log('[Phase4] Product added:', item.name, data.id.slice(0,8));
+      await loadProductsFromSupabase();
+      renderMenuMgmt(); renderMenuGrid();
     }
   } catch(e){ console.warn('[Phase4] saveProdukToSupabase error:', e.message); }
 }
