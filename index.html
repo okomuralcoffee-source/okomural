@@ -3842,11 +3842,7 @@ async function hydrateUserFromSession(session) {
       <div class="gfield">
         <label>Supplier *</label>
         <select id="po-supplier" class="struk-input">
-          <option value="">Pilih supplier...</option>
-          <option value="PT Kopi Nusantara">PT Kopi Nusantara</option>
-          <option value="CV Susu Segar">CV Susu Segar</option>
-          <option value="UD Bahan Kue">UD Bahan Kue</option>
-          <option value="PT Kemasan Indo">PT Kemasan Indo</option>
+          <option value="">Memuat supplier...</option>
         </select>
       </div>
       <div class="gfield">
@@ -11446,6 +11442,19 @@ function updatePOStatus(id, status){
 /* ── PO Modal ── */
 function openPOModal(){
   poItems = [{name:'', qty:1, unit:'kg', price:0}];
+  // Populate supplier dropdown dari SUPPLIERS_DB (Supabase)
+  const supSel = document.getElementById('po-supplier');
+  if(supSel){
+    const populate = async () => {
+      if(SUPPLIERS_DB.length === 0) await loadSuppliersFromSupabase();
+      supSel.innerHTML = '<option value="">Pilih supplier...</option>' +
+        SUPPLIERS_DB.filter(s=>s.is_active!==false).map(s=>
+          `<option value="${s.name}">${s.name}</option>`
+        ).join('') +
+        '<option value="__lainnya__">Lainnya (ketik manual)</option>';
+    };
+    populate();
+  }
   document.getElementById('po-supplier').value = '';
   document.getElementById('po-notes').value = '';
   const dd = document.getElementById('po-delivery-date');
