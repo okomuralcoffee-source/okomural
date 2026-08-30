@@ -5153,8 +5153,22 @@ function goToLauncher(){
   loadProductsFromSupabase();
   // Phase 9: init realtime subscriptions
   setTimeout(initRealtimeSubscriptions, 1000);
-  // Keep-alive: ping Edge Function setiap 4 menit agar tidak cold start
+  // Keep-alive: ping langsung + setiap 4 menit agar tidak cold start
   startEdgeFunctionKeepAlive();
+  // Ping pertama langsung sekarang agar Edge Function warm saat dibutuhkan
+  setTimeout(async () => {
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if(session) {
+        fetch(EDGE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+session.access_token },
+          body: JSON.stringify({ action: 'ping' }),
+        }).catch(() => {});
+        console.log('[KeepAlive] Initial warm-up ping sent');
+      }
+    } catch(e) {}
+  }, 2000); // 2 detik setelah login
   // Last page restore dipanggil dari initSupabaseAuth setelah session di-load
 }
 // ── LOGOUT (Supabase + local cleanup) ────────────────────────────────────────
