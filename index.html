@@ -13421,8 +13421,9 @@ async function loadUsersFromSupabase(){
   if(currentUser?.role !== 'Owner') return;
   const tbody = document.getElementById('user-mgmt-tbody');
   if(!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">⏳ Memuat data user... (mungkin 2-3 detik)</td></tr>';
   try {
+    // Edge Function mungkin cold start — beri waktu lebih
     const { data: employees } = await callAdminEdge({ action:'list' });
     if(!employees || employees.length === 0){
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada user</td></tr>';
