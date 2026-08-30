@@ -2429,6 +2429,7 @@ async function hydrateUserFromSession(session) {
     <div class="inv-tab active" onclick="switchInvTab(this,'stok')">Stok Live</div>
     <div class="inv-tab" onclick="switchInvTab(this,'bom')">Resep (BOM)</div>
     <div class="inv-tab" onclick="switchInvTab(this,'opname')">Opname Log</div>
+    <div class="inv-tab" id="inv-tab-materials" onclick="switchInvTab(this,'materials')">🧪 Bahan Baku</div>
   </div>
   <div class="inv-panel active" id="inv-stok">
     <div class="table-wrap">
@@ -2509,6 +2510,18 @@ async function hydrateUserFromSession(session) {
       </div>
       <!-- HPP Summary -->
       <div class="bom-hpp-summary" id="bom-hpp-summary"></div>
+    </div>
+  </div>
+  <div class="inv-panel" id="inv-materials" style="">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;color:var(--text3)" id="materials-subtitle">Daftar bahan baku & stok</div>
+      <button class="btn btn-primary btn-sm" onclick="openMaterialModal()">+ Bahan Baku</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nama Bahan</th><th>Satuan</th><th>Harga/Unit</th><th>Supplier</th><th>Catatan</th><th></th></tr></thead>
+        <tbody id="materials-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr></tbody>
+      </table>
     </div>
   </div>
   <div class="inv-panel" id="inv-opname">
@@ -3468,19 +3481,45 @@ async function hydrateUserFromSession(session) {
 <div class="module" id="module-purchase-orders">
   <div class="page-header">
     <div class="page-header-left"><h2>Purchase Orders</h2><p>Kelola pembelian bahan baku ke supplier</p></div>
-    <button class="btn btn-primary btn-sm" onclick="openPOModal()">+ Buat PO</button>
-  </div>
-  <div class="po-header-row">
-    <div class="po-status-tabs">
-      <button class="po-status-tab active" id="po-tab-semua" onclick="filterPO(this,'semua')">Semua</button>
-      <button class="po-status-tab" id="po-tab-draft" onclick="filterPO(this,'draft')">Draft</button>
-      <button class="po-status-tab" id="po-tab-terkirim" onclick="filterPO(this,'terkirim')">Terkirim</button>
-      <button class="po-status-tab" id="po-tab-diterima" onclick="filterPO(this,'diterima')">Diterima</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="switchPOTab('suppliers')">🏭 Supplier</button>
+      <button class="btn btn-primary btn-sm" onclick="openPOModal()">+ Buat PO</button>
     </div>
-    <div id="po-summary" style="margin-left:auto;font-size:11px;color:var(--text3)"></div>
   </div>
-  <div id="po-list"></div>
-  <div id="po-empty" class="st-empty" style="display:none">Belum ada Purchase Order. Klik "+ Buat PO" untuk membuat.</div>
+  <!-- Tab switcher -->
+  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:14px;width:fit-content">
+    <button id="po-main-tab" onclick="switchPOTab('po')" style="padding:7px 16px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--green);color:#000">📋 Purchase Orders</button>
+    <button id="po-supplier-tab" onclick="switchPOTab('suppliers')" style="padding:7px 16px;border:none;border-left:1px solid var(--border);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg2);color:var(--text2)">🏭 Supplier</button>
+  </div>
+
+  <!-- PO Panel -->
+  <div id="po-panel">
+    <div class="po-header-row">
+      <div class="po-status-tabs">
+        <button class="po-status-tab active" id="po-tab-semua" onclick="filterPO(this,'semua')">Semua</button>
+        <button class="po-status-tab" id="po-tab-draft" onclick="filterPO(this,'draft')">Draft</button>
+        <button class="po-status-tab" id="po-tab-terkirim" onclick="filterPO(this,'terkirim')">Terkirim</button>
+        <button class="po-status-tab" id="po-tab-diterima" onclick="filterPO(this,'diterima')">Diterima</button>
+      </div>
+      <div id="po-summary" style="margin-left:auto;font-size:11px;color:var(--text3)"></div>
+    </div>
+    <div id="po-list"></div>
+    <div id="po-empty" class="st-empty" style="display:none">Belum ada Purchase Order. Klik "+ Buat PO" untuk membuat.</div>
+  </div>
+
+  <!-- Supplier Panel -->
+  <div id="supplier-panel" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;color:var(--text3)" id="supplier-subtitle">Memuat supplier...</div>
+      <button class="btn btn-primary btn-sm" onclick="openSupplierModal()">+ Tambah Supplier</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nama Supplier</th><th>Kontak</th><th>Telepon</th><th>Alamat</th><th>Status</th><th></th></tr></thead>
+        <tbody id="supplier-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 <div class="module" id="module-pricelist">
   <div class="page-header">
@@ -8317,7 +8356,8 @@ function numBackspace(){numpadStr=numpadStr.slice(0,-1);updateNumpad()}
 function setExact(v){numpadStr=String(v);updateNumpad()}
 function setExactTotal(){numpadStr=String(_checkoutFinalTotal||cartTotal);updateNumpad()}
 function updateNumpad(){const val=parseInt(numpadStr||'0');const due=_checkoutFinalTotal||cartTotal;document.getElementById('numpad-val').textContent='Rp '+val.toLocaleString('id');const ch=val-due;document.getElementById('numpad-change').textContent=val>=due&&val>0?'Kembalian: Rp '+ch.toLocaleString('id'):val>0&&val<due?'Kurang: Rp '+(due-val).toLocaleString('id'):''}
-function switchInvTab(el,tab){document.querySelectorAll('.inv-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.inv-panel').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('inv-'+tab).classList.add('active')}
+function switchInvTab(el,tab){document.querySelectorAll('.inv-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.inv-panel').forEach(p=>p.classList.remove('active'));el.classList.add('active');document.getElementById('inv-'+tab).classList.add('active')
+  if(tab==='materials'){ loadSuppliersFromSupabase(); loadMaterialsFromSupabase(); }}
 function renderMenuMgmt(){
   const el=document.getElementById('menu-mgmt-grid');if(!el)return;
   const catMap={coffee:'Coffee',noncoffee:'Non-Coffee',food:'Makanan'};
@@ -12340,6 +12380,225 @@ async function saveKaryawanToSupabase(karyawan){
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
+// ── FASE 2: SUPPLIER CRUD ─────────────────────────────────────────────────
+
+let SUPPLIERS_DB = []; // Cache dari Supabase
+
+function switchPOTab(tab){
+  const poPanel      = document.getElementById('po-panel');
+  const supPanel     = document.getElementById('supplier-panel');
+  const mainBtn      = document.getElementById('po-main-tab');
+  const supBtn       = document.getElementById('po-supplier-tab');
+  if(tab === 'suppliers'){
+    if(poPanel)  poPanel.style.display  = 'none';
+    if(supPanel) supPanel.style.display = '';
+    if(mainBtn)  { mainBtn.style.background='var(--bg2)'; mainBtn.style.color='var(--text2)'; }
+    if(supBtn)   { supBtn.style.background='var(--green)'; supBtn.style.color='#000'; }
+    loadSuppliersFromSupabase();
+  } else {
+    if(poPanel)  poPanel.style.display  = '';
+    if(supPanel) supPanel.style.display = 'none';
+    if(mainBtn)  { mainBtn.style.background='var(--green)'; mainBtn.style.color='#000'; }
+    if(supBtn)   { supBtn.style.background='var(--bg2)'; supBtn.style.color='var(--text2)'; }
+    renderPOList();
+  }
+}
+
+async function loadSuppliersFromSupabase(){
+  const tbody = document.getElementById('supplier-tbody');
+  const sub   = document.getElementById('supplier-subtitle');
+  if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Memuat...</td></tr>';
+  try {
+    const { data, error } = await supa.from('suppliers').select('*').order('name');
+    if(error) throw error;
+    SUPPLIERS_DB = data || [];
+    if(sub) sub.textContent = SUPPLIERS_DB.length + ' supplier terdaftar';
+    if(!tbody) return;
+    if(SUPPLIERS_DB.length === 0){
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Belum ada supplier. Klik "+ Tambah Supplier"</td></tr>';
+      return;
+    }
+    tbody.innerHTML = SUPPLIERS_DB.map(s => `<tr>
+      <td style="font-weight:600">${s.name}</td>
+      <td style="color:var(--text3)">${s.contact||'—'}</td>
+      <td style="font-size:11px">${s.phone||'—'}</td>
+      <td style="font-size:11px;color:var(--text3);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.address||'—'}</td>
+      <td><span class="badge ${s.is_active!==false?'badge-green':'badge-gray'}">${s.is_active!==false?'Aktif':'Nonaktif'}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="openSupplierModal('${s.id}')">Edit</button>
+        <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="deleteSupplier('${s.id}','${s.name.replace(/'/g,"\\'")}')">×</button>
+      </td>
+    </tr>`).join('');
+  } catch(e){
+    console.warn('[Fase2] loadSuppliers error:', e.message);
+    if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red)">Gagal memuat: '+e.message+'</td></tr>';
+  }
+}
+
+function openSupplierModal(id){
+  const s = id ? SUPPLIERS_DB.find(x=>x.id===id) : null;
+  const edit = !!s;
+  openGModal(
+    edit ? 'Edit Supplier — '+s.name : 'Tambah Supplier Baru',
+    `<div class="gfield"><label>Nama Supplier / Toko</label>
+      <input id="sup-name" type="text" value="${s?.name||''}" placeholder="Contoh: CV Kopi Nusantara / Warung Pak Budi...">
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">Bisa diisi nama warung, toko biasa, atau pemasok formal</div>
+    </div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Nama Kontak</label><input id="sup-contact" type="text" value="${s?.contact||''}" placeholder="Nama PIC..."></div>
+      <div class="gfield"><label>Telepon / WA</label><input id="sup-phone" type="text" value="${s?.phone||''}" placeholder="0812-xxxx-xxxx"></div>
+    </div>
+    <div class="gfield"><label>Alamat</label><input id="sup-address" type="text" value="${s?.address||''}" placeholder="Alamat supplier..."></div>
+    <div class="gfield"><label>Email (opsional)</label><input id="sup-email" type="email" value="${s?.email||''}" placeholder="email@supplier.com"></div>
+    <div class="gfield" style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      <label class="toggle-sw"><input type="checkbox" id="sup-active" ${s?.is_active!==false?'checked':''}>
+      <span class="toggle-track"></span></label>
+      <span style="font-size:12px;color:var(--text2)">Supplier aktif</span>
+    </div>`,
+    edit ? 'Simpan Perubahan' : 'Tambah Supplier',
+    async () => {
+      const name    = document.getElementById('sup-name').value.trim();
+      const contact = document.getElementById('sup-contact').value.trim();
+      const phone   = document.getElementById('sup-phone').value.trim();
+      const address = document.getElementById('sup-address').value.trim();
+      const email   = document.getElementById('sup-email').value.trim();
+      const active  = document.getElementById('sup-active').checked;
+      if(!name){ showToast('error','Nama supplier wajib diisi'); return; }
+      try {
+        const payload = { name, contact:contact||null, phone:phone||null, address:address||null, email:email||null, is_active:active };
+        if(edit){
+          const { error } = await supa.from('suppliers').update(payload).eq('id', id);
+          if(error) throw error;
+          showToast('success', name+' diperbarui');
+        } else {
+          const { error } = await supa.from('suppliers').insert(payload);
+          if(error) throw error;
+          showToast('success', name+' ditambahkan');
+        }
+        logActivity('Supplier', (edit?'Edit':'Tambah')+': '+name);
+        loadSuppliersFromSupabase();
+      } catch(e){ showToast('error','Gagal simpan', e.message); }
+    }
+  );
+}
+
+async function deleteSupplier(id, name){
+  openConfirm('Hapus Supplier', '"'+name+'" akan dihapus. PO dan pricelist terkait tidak terpengaruh.', 'Hapus', async ()=>{
+    const { error } = await supa.from('suppliers').delete().eq('id', id);
+    if(error){ showToast('error','Gagal hapus', error.message); return; }
+    showToast('success', name+' dihapus');
+    logActivity('Supplier','Hapus: '+name);
+    loadSuppliersFromSupabase();
+  });
+}
+
+// ── FASE 2: MATERIALS CRUD ─────────────────────────────────────────────────
+
+let MATERIALS_DB = []; // Cache dari Supabase
+
+async function loadMaterialsFromSupabase(){
+  const tbody = document.getElementById('materials-tbody');
+  const sub   = document.getElementById('materials-subtitle');
+  try {
+    const { data, error } = await supa
+      .from('materials_master')
+      .select('id, name, default_unit, cost_per_unit, category, notes, supplier_id, suppliers(name)')
+      .order('name');
+    if(error) throw error;
+    MATERIALS_DB = data || [];
+    if(sub) sub.textContent = MATERIALS_DB.length + ' bahan baku terdaftar';
+    if(!tbody) return;
+    if(MATERIALS_DB.length === 0){
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">Belum ada bahan baku. Klik "+ Bahan Baku"</td></tr>';
+      return;
+    }
+    tbody.innerHTML = MATERIALS_DB.map(m => `<tr>
+      <td style="font-weight:600">${m.name}</td>
+      <td style="color:var(--text3)">${m.default_unit||'—'}</td>
+      <td style="font-size:11px">${m.cost_per_unit ? 'Rp '+parseFloat(m.cost_per_unit).toLocaleString('id') : '—'}</td>
+      <td style="font-size:11px;color:var(--text3)">${m.suppliers?.name||'—'}</td>
+      <td style="font-size:11px;color:var(--text3);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${m.notes||''}">${m.notes||'—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="openMaterialModal('${m.id}')">Edit</button>
+        <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="deleteMaterial('${m.id}','${m.name.replace(/'/g,"\\'")}')">×</button>
+      </td>
+    </tr>`).join('');
+  } catch(e){
+    console.warn('[Fase2] loadMaterials error:', e.message);
+    if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red)">Gagal memuat: '+e.message+'</td></tr>';
+  }
+}
+
+function openMaterialModal(id){
+  const m = id ? MATERIALS_DB.find(x=>x.id===id) : null;
+  const edit = !!m;
+  // Load suppliers dulu kalau belum
+  if(SUPPLIERS_DB.length === 0) loadSuppliersFromSupabase();
+  const supOpts = '<option value="">— Tanpa supplier —</option>' +
+    SUPPLIERS_DB.filter(s=>s.is_active!==false).map(s =>
+      `<option value="${s.id}"${m?.supplier_id===s.id?' selected':''}>${s.name}</option>`
+    ).join('');
+  const unitOpts = ['gr','kg','ml','liter','pcs','loaf','btl','sak','lembar'].map(u=>
+    `<option value="${u}"${m?.default_unit===u?' selected':''}>${u}</option>`
+  ).join('');
+  openGModal(
+    edit ? 'Edit Bahan Baku — '+m.name : 'Tambah Bahan Baku Baru',
+    `<div class="gfield"><label>Nama Bahan Baku</label><input id="mat-name" type="text" value="${m?.name||''}" placeholder="Contoh: Kopi Robusta..."></div>
+    <div class="gfield-row">
+      <div class="gfield"><label>Satuan Default</label>
+        <select id="mat-unit" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">${unitOpts}</select>
+      </div>
+      <div class="gfield"><label>Harga per Satuan (Rp)</label>
+        <input id="mat-cost" type="number" value="${m?.cost_per_unit||''}" placeholder="0" min="0">
+      </div>
+    </div>
+    <div class="gfield"><label>Supplier Utama (opsional)</label>
+      <select id="mat-supplier" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit">${supOpts}</select>
+    </div>
+    <div class="gfield"><label>Catatan (opsional)</label><input id="mat-notes" type="text" value="${m?.notes||''}" placeholder="Contoh: simpan di kulkas, grade A..."></div>`,
+    edit ? 'Simpan Perubahan' : 'Tambah Bahan',
+    async () => {
+      const name     = document.getElementById('mat-name').value.trim();
+      const unit     = document.getElementById('mat-unit').value;
+      const cost     = parseFloat(document.getElementById('mat-cost').value)||0;
+      const supId    = document.getElementById('mat-supplier').value || null;
+      const notes    = document.getElementById('mat-notes').value.trim();
+      if(!name){ showToast('error','Nama bahan wajib diisi'); return; }
+      try {
+        const payload = { name, default_unit:unit, cost_per_unit:cost||null, supplier_id:supId, notes:notes||null };
+        if(edit){
+          const { error } = await supa.from('materials_master').update(payload).eq('id', id);
+          if(error) throw error;
+          showToast('success', name+' diperbarui');
+        } else {
+          const { error } = await supa.from('materials_master').insert(payload);
+          if(error) throw error;
+          showToast('success', name+' ditambahkan');
+        }
+        logActivity('Material', (edit?'Edit':'Tambah')+': '+name);
+        loadMaterialsFromSupabase();
+        // Reload INV agar tampil di Stok Live
+        await loadInventoryFromSupabase();
+        renderInventory();
+      } catch(e){ showToast('error','Gagal simpan', e.message); }
+    }
+  );
+}
+
+async function deleteMaterial(id, name){
+  openConfirm('Hapus Bahan Baku',
+    '"'+name+'" akan dihapus dari master bahan. Stok & BOM terkait mungkin terpengaruh.',
+    'Hapus', async ()=>{
+    const { error } = await supa.from('materials_master').delete().eq('id', id);
+    if(error){ showToast('error','Gagal hapus', error.message); return; }
+    showToast('success', name+' dihapus');
+    logActivity('Material','Hapus: '+name);
+    loadMaterialsFromSupabase();
+  });
+}
+
+// ── FASE 2: Wire switchInvTab untuk Materials panel ────────────────────────
+
 // ── MATERIAL PRICELIST — Full CRUD ────────────────────────────────────────
 
 function renderPricelist(){
@@ -12441,6 +12700,12 @@ function openPricelistModal(id){
     `<option value="${v}"${entry?.status===v?' selected':''}>${l}</option>`
   ).join('');
 
+  // Load suppliers untuk dropdown
+  if(SUPPLIERS_DB.length === 0) loadSuppliersFromSupabase();
+  const supDropOpts = '<option value="">Ketik nama supplier...</option>' +
+    SUPPLIERS_DB.filter(s=>s.is_active!==false).map(s=>
+      `<option value="${s.name}"${entry?.supplier===s.name?' selected':''}>${s.name}</option>`
+    ).join('') + '<option value="__other__">Lainnya (ketik manual)</option>';
   openGModal(
     edit ? 'Edit Harga Referensi' : 'Tambah Harga Referensi',
     `<div class="gfield">
@@ -12455,7 +12720,12 @@ function openPricelistModal(id){
     </div>
     <div class="gfield">
       <label>Supplier</label>
-      <input id="pl-sup" type="text" value="${entry?.supplier||''}" placeholder="Nama supplier/toko...">
+      <select id="pl-sup-sel" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit;margin-bottom:6px"
+        onchange="document.getElementById('pl-sup-manual').style.display=this.value==='__other__'||!this.value?'':'none';if(this.value&&this.value!=='__other__')document.getElementById('pl-sup').value=this.value">
+        ${supDropOpts}
+      </select>
+      <input id="pl-sup" type="text" value="${entry?.supplier||''}" placeholder="Atau ketik nama supplier/warung..." style="width:100%">
+      <div id="pl-sup-manual" style="display:none"></div>
     </div>
     <div class="gfield-row">
       <div class="gfield">
