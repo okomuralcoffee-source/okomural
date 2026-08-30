@@ -12441,6 +12441,13 @@ async function saveKaryawanToSupabase(karyawan){
 const BACKUP_EDGE_URL = 'https://uutkxrsalpzfvfjtsnoq.supabase.co/functions/v1/auto-backup';
 
 async function loadBackupDashboard(){
+  // Pastikan Supabase session siap — jika belum, ambil dulu
+  if(!currentUser?.supaAuthId){
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if(session && currentUser) currentUser.supaAuthId = session.user.id;
+    } catch(e) {}
+  }
   try {
     const { data: cfg } = await supa
       .from('system_config').select('key,value').like('key','backup%');
