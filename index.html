@@ -10278,7 +10278,22 @@ renderMenuMgmt = function(){
   const el = document.getElementById('menu-mgmt-grid');
   if(!el) return;
   const catMap = {coffee:'Coffee', noncoffee:'Non-Coffee', food:'Makanan'};
-  el.innerHTML = MENU.map(item => {
+  // Respek filter yang ada
+  const q     = (document.getElementById('menu-search')?.value||'').toLowerCase().trim();
+  const catF  = document.getElementById('menu-cat-filter')?.value||'all';
+  const availF= document.getElementById('menu-avail-filter')?.value||'all';
+  let items = [...MENU];
+  if(q)           items = items.filter(m=>m.name.toLowerCase().includes(q));
+  if(catF!=='all')items = items.filter(m=>m.cat===catF);
+  if(availF==='available')  items = items.filter(m=>m.available!==false);
+  if(availF==='unavailable') items = items.filter(m=>m.available===false);
+  const countEl = document.getElementById('menu-count');
+  if(countEl) countEl.textContent = items.length+' produk'+(q||catF!=='all'||availF!=='all'?' (difilter dari '+MENU.length+' total)':'');
+  if(items.length===0){
+    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">🔍</div><div style="font-size:13px;font-weight:600">Tidak ada produk ditemukan</div></div>';
+    return;
+  }
+  el.innerHTML = items.map(item => {
     const bom = BOM_DATA[item.id];
     const hpp = calcHPP(item.id);
     const config = getProductModifier(item.id);
@@ -10292,7 +10307,7 @@ renderMenuMgmt = function(){
       🧂 ${toppingCount} topping
     </div>`;
     return `<div class="menu-mgmt-card">
-      <div style="position:absolute;top:10px;right:10px"><label class="toggle-sw"><input type="checkbox" ${item.stock>0?'checked':''} onchange="showToast(this.checked?'success':'warning','${item.name} '+(this.checked?'diaktifkan':'dinonaktifkan'))"><span class="toggle-track"></span></label></div>
+      <div style="position:absolute;top:10px;right:10px"><label class="toggle-sw"><input type="checkbox" ${item.available!==false?'checked':''} onchange="toggleMenuAvailable(${item.id},this.checked)"><span class="toggle-track"></span></label></div>
       <div style="font-size:22px;margin-bottom:6px">${item.emoji}</div>
       <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px">${item.name}</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${catMap[item.cat]||item.cat} · Rp ${item.price.toLocaleString('id')}</div>
