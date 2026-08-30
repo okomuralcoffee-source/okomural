@@ -10882,8 +10882,6 @@ renderMenuGrid = function(cat='all'){
   if(!activeShift){
     if(lockEl) lockEl.style.display = 'flex';
     if(gridEl) gridEl.style.opacity = '0.15';
-    // Tetap render grid di belakang (terlihat blur) tapi tidak bisa diklik
-    // karena overlay pointer-events:all memblokir semua klik
   } else {
     if(lockEl) lockEl.style.display = 'none';
     if(gridEl) gridEl.style.opacity = '1';
@@ -10894,7 +10892,9 @@ renderMenuGrid = function(cat='all'){
   if(bulkMode) grid.classList.add('bulk-mode');
   else grid.classList.remove('bulk-mode');
   grid.innerHTML = items.map(item => {
-    const unavailable = item.stock === 0;
+    // Unavailable: hanya jika explicitly disabled (available=false)
+    // Bukan berdasarkan stock=0 karena stok produk tidak di-track per unit
+    const unavailable = item.available === false;
     const onclickFn = unavailable ? '' : bulkMode
       ? 'openBulkModal(' + item.id + ')'
       : 'addToCart(' + item.id + ')';
@@ -10902,7 +10902,6 @@ renderMenuGrid = function(cat='all'){
     const thumbHTML = item.photoUrl
       ? `<div class="menu-card-img" style="padding:0;overflow:hidden"><img src="${item.photoUrl}" class="menu-card-photo" onerror="this.parentElement.innerHTML='${item.emoji||'☕'}'"></div>`
       : `<div class="menu-card-img">${item.emoji||'☕'}</div>`;
-    // Badges
     const habitBadge = unavailable ? '<div class="menu-card-badge"><span class="badge badge-red">Habis</span></div>' : '';
     const bulkBadge = (bulkMode && !unavailable) ? '<div style="position:absolute;top:6px;right:6px;background:rgba(139,92,246,.2);border:1px solid rgba(139,92,246,.4);border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;color:var(--purple)">QTY</div>' : '';
     return `<div class="menu-card${unavailable ? ' unavailable' : ''}"${onclickFn ? ' onclick="' + onclickFn + '"' : ''}>
@@ -10911,7 +10910,6 @@ renderMenuGrid = function(cat='all'){
       <div class="menu-card-info">
         <div class="menu-card-name">${item.name}</div>
         <div class="menu-card-price">Rp ${item.price.toLocaleString('id')}</div>
-        <div class="menu-card-stock">${item.stock > 0 ? 'Stok: ' + item.stock : '—'}</div>
       </div>
     </div>`;
   }).join('');
