@@ -1,11 +1,7 @@
 const CACHE_NAME = 'okomural-erp-v1';
-const SHELL = ['/'];
 
-// Install — cache app shell
+// Install — minimal cache, hanya app shell
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(c => c.addAll(SHELL))
-  );
   self.skipWaiting();
 });
 
@@ -19,24 +15,28 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Fetch — Network first, fallback ke cache
-// Supabase API selalu network (tidak di-cache)
+// Fetch — hanya cache request dari domain sendiri
+// Semua request eksternal (Supabase, Google, font, CDN) → biarkan browser handle
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
+  const url = new URL(e.request.url);
 
-  // Supabase & Google API — selalu network
-  if (url.includes('supabase.co') || url.includes('googleapis.com')) {
-    return; // biarkan browser handle normal
-  }
+  // Skip: bukan GET
+  if (e.request.method !== 'GET') return;
 
-  // App shell — Network first, fallback cache
+  // Skip: semua domain eksternal — biarkan browser handle normal
+  const ownOrigin = self.location.origin; // https://erp.okomural.com
+  if (url.origin !== ownOrigin) return;
+
+  // Skip: Vercel internal
+  if (url.pathname.startsWith('/_next') || url.pathname.startsWith('/api')) return;
+
+  // Untuk request dari domain sendiri → Network first, fallback cache
   e.respondWith(
     fetch(e.request)
       .then(res => {
-        // Cache response terbaru
-        if (res.ok && e.request.method === 'GET') {
+        if (res.ok && res.type === 'basic') {
           const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone)).catch(() => {});
         }
         return res;
       })
