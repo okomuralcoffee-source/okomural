@@ -2779,7 +2779,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'backup');loadBackupDashboard()">☁️ Auto Backup</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
-      <div id="settings-cabang">
+      <div id="settings-cabang" style="">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">Cabang &amp; Outlet</div>
         <div class="table-wrap" style="margin-bottom:14px">
           <table><thead><tr><th>Nama</th><th>Alamat</th><th>Status</th><th></th></tr></thead><tbody>
@@ -2913,70 +2913,6 @@ async function hydrateUserFromSession(session) {
       </div>
       <!-- KUPON PANEL -->
       <div id="settings-branding" style="display:none">
-      </div>
-
-      <div id="settings-backup" style="display:none">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">☁️ Auto Backup Google Drive</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:18px">Backup otomatis data ERP ke Google Drive setiap hari</div>
-
-        <!-- Status card -->
-        <div id="backup-status-card" style="padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);margin-bottom:18px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <div id="backup-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text3)"></div>
-            <span id="backup-status-text" style="font-size:13px;font-weight:600">Memuat status...</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;color:var(--text3)">
-            <div>Backup terakhir: <span id="backup-last-run" style="color:var(--text)">—</span></div>
-            <div>Status: <span id="backup-last-status" style="color:var(--text)">—</span></div>
-            <div>Folder: <span id="backup-folder-name" style="color:var(--text)">OKOMURAL_Backup</span></div>
-            <div>Jadwal: <span id="backup-schedule-display" style="color:var(--text)">—</span></div>
-          </div>
-        </div>
-
-        <!-- Jadwal -->
-        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Jadwal Backup Harian</div>
-        <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap">
-          <div class="gfield" style="margin:0;flex:1;min-width:140px">
-            <label>Jam Backup (WIB)</label>
-            <input type="time" id="backup-time-input" value="03:00" style="width:100%">
-          </div>
-          <div class="gfield" style="margin:0;flex:0">
-            <label>Status</label>
-            <label class="toggle-sw" style="margin-top:8px;display:flex;align-items:center;gap:8px">
-              <input type="checkbox" id="backup-enabled-toggle" checked onchange="saveBackupConfig()">
-              <span class="toggle-track"></span>
-              <span id="backup-enabled-label" style="font-size:12px;color:var(--text3)">Aktif</span>
-            </label>
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="saveBackupConfig()" style="flex:0;height:36px">💾 Simpan Jadwal</button>
-        </div>
-
-        <!-- Tombol manual -->
-        <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" id="backup-now-btn" onclick="runBackupNow()">
-            ☁️ Backup Sekarang
-          </button>
-          <a id="backup-drive-link" href="#" target="_blank" class="btn btn-secondary btn-sm" style="display:none">
-            📁 Buka Google Drive
-          </a>
-        </div>
-
-        <!-- Riwayat backup -->
-        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Riwayat Backup</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Waktu</th><th>Status</th><th>Files</th><th>Durasi</th><th>Link</th></tr></thead>
-            <tbody id="backup-log-tbody">
-              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat riwayat...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div style="margin-top:12px;font-size:11px;color:var(--text3);line-height:1.6">
-          💡 Backup berjalan otomatis di server Supabase — tidak perlu browser terbuka.<br>
-          File yang dibackup: sales.csv · inventory_stocks.csv · expenses.csv · crm_members.csv · attendance_logs.csv · LAPORAN_[tanggal].html
-        </div>
-      </div>
         <div style="font-size:14px;font-weight:600;margin-bottom:4px">🎨 Branding & Identitas Bisnis</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:20px">Logo dan nama bisnis akan tampil di semua topbar, struk, dan slip gaji</div>
         <!-- Logo section -->
@@ -3128,7 +3064,71 @@ async function hydrateUserFromSession(session) {
           <span class="brand-tagline-text" style="font-size:11px;color:var(--text3)">ERP & POS</span>
         </div>
       </div>
-      <div id="settings-kupon" style="display:none">
+      </div>
+
+      <div id="settings-backup" style="display:none">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">☁️ Auto Backup Google Drive</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:18px">Backup otomatis data ERP ke Google Drive setiap hari</div>
+
+        <!-- Status card -->
+        <div id="backup-status-card" style="padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div id="backup-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text3)"></div>
+            <span id="backup-status-text" style="font-size:13px;font-weight:600">Memuat status...</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;color:var(--text3)">
+            <div>Backup terakhir: <span id="backup-last-run" style="color:var(--text)">—</span></div>
+            <div>Status: <span id="backup-last-status" style="color:var(--text)">—</span></div>
+            <div>Folder: <span id="backup-folder-name" style="color:var(--text)">OKOMURAL_Backup</span></div>
+            <div>Jadwal: <span id="backup-schedule-display" style="color:var(--text)">—</span></div>
+          </div>
+        </div>
+
+        <!-- Jadwal -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Jadwal Backup Harian</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap">
+          <div class="gfield" style="margin:0;flex:1;min-width:140px">
+            <label>Jam Backup (WIB)</label>
+            <input type="time" id="backup-time-input" value="03:00" style="width:100%">
+          </div>
+          <div class="gfield" style="margin:0;flex:0">
+            <label>Status</label>
+            <label class="toggle-sw" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="backup-enabled-toggle" checked onchange="saveBackupConfig()">
+              <span class="toggle-track"></span>
+              <span id="backup-enabled-label" style="font-size:12px;color:var(--text3)">Aktif</span>
+            </label>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="saveBackupConfig()" style="flex:0;height:36px">💾 Simpan Jadwal</button>
+        </div>
+
+        <!-- Tombol manual -->
+        <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="backup-now-btn" onclick="runBackupNow()">
+            ☁️ Backup Sekarang
+          </button>
+          <a id="backup-drive-link" href="#" target="_blank" class="btn btn-secondary btn-sm" style="display:none">
+            📁 Buka Google Drive
+          </a>
+        </div>
+
+        <!-- Riwayat backup -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Riwayat Backup</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Waktu</th><th>Status</th><th>Files</th><th>Durasi</th><th>Link</th></tr></thead>
+            <tbody id="backup-log-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat riwayat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:12px;font-size:11px;color:var(--text3);line-height:1.6">
+          💡 Backup berjalan otomatis di server Supabase — tidak perlu browser terbuka.<br>
+          File yang dibackup: sales.csv · inventory_stocks.csv · expenses.csv · crm_members.csv · attendance_logs.csv · LAPORAN_[tanggal].html
+        </div>
+      </div>
+ <div id="settings-kupon" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <div>
             <div style="font-size:14px;font-weight:700">Kode Kupon</div>
