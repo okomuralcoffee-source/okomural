@@ -2776,6 +2776,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'payment')">Metode Bayar</div>
       <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
+      <div class="s-item" onclick="switchSettings(this,'backup');loadBackupDashboard()">☁️ Auto Backup</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
       <div id="settings-cabang">
@@ -2912,6 +2913,69 @@ async function hydrateUserFromSession(session) {
       </div>
       <!-- KUPON PANEL -->
       <div id="settings-branding" style="display:none">
+
+      <div id="settings-backup" style="display:none">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">☁️ Auto Backup Google Drive</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:18px">Backup otomatis data ERP ke Google Drive setiap hari</div>
+
+        <!-- Status card -->
+        <div id="backup-status-card" style="padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div id="backup-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text3)"></div>
+            <span id="backup-status-text" style="font-size:13px;font-weight:600">Memuat status...</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;color:var(--text3)">
+            <div>Backup terakhir: <span id="backup-last-run" style="color:var(--text)">—</span></div>
+            <div>Status: <span id="backup-last-status" style="color:var(--text)">—</span></div>
+            <div>Folder: <span id="backup-folder-name" style="color:var(--text)">OKOMURAL_Backup</span></div>
+            <div>Jadwal: <span id="backup-schedule-display" style="color:var(--text)">—</span></div>
+          </div>
+        </div>
+
+        <!-- Jadwal -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Jadwal Backup Harian</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap">
+          <div class="gfield" style="margin:0;flex:1;min-width:140px">
+            <label>Jam Backup (WIB)</label>
+            <input type="time" id="backup-time-input" value="03:00" style="width:100%">
+          </div>
+          <div class="gfield" style="margin:0;flex:0">
+            <label>Status</label>
+            <label class="toggle-sw" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="backup-enabled-toggle" checked onchange="saveBackupConfig()">
+              <span class="toggle-track"></span>
+              <span id="backup-enabled-label" style="font-size:12px;color:var(--text3)">Aktif</span>
+            </label>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="saveBackupConfig()" style="flex:0;height:36px">💾 Simpan Jadwal</button>
+        </div>
+
+        <!-- Tombol manual -->
+        <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="backup-now-btn" onclick="runBackupNow()">
+            ☁️ Backup Sekarang
+          </button>
+          <a id="backup-drive-link" href="#" target="_blank" class="btn btn-secondary btn-sm" style="display:none">
+            📁 Buka Google Drive
+          </a>
+        </div>
+
+        <!-- Riwayat backup -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Riwayat Backup</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Waktu</th><th>Status</th><th>Files</th><th>Durasi</th><th>Link</th></tr></thead>
+            <tbody id="backup-log-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Memuat riwayat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:12px;font-size:11px;color:var(--text3);line-height:1.6">
+          💡 Backup berjalan otomatis di server Supabase — tidak perlu browser terbuka.<br>
+          File yang dibackup: sales.csv · inventory_stocks.csv · expenses.csv · crm_members.csv · attendance_logs.csv · LAPORAN_[tanggal].html
+        </div>
+      </div>
         <div style="font-size:14px;font-weight:600;margin-bottom:4px">🎨 Branding & Identitas Bisnis</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:20px">Logo dan nama bisnis akan tampil di semua topbar, struk, dan slip gaji</div>
         <!-- Logo section -->
@@ -8622,7 +8686,7 @@ function doConfirm(){if(confirmCallback)confirmCallback();closeConfirm();}
 function switchSettings(el,panel){
   document.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
   el.classList.add('active');
-  ['cabang','user','loyalitas','payment','kupon'].forEach(p=>{
+  ['cabang','user','loyalitas','payment','kupon','branding','backup'].forEach(p=>{
     const el2=document.getElementById('settings-'+p);
     if(el2)el2.style.display=p===panel?'':'none';
   });
@@ -12568,6 +12632,122 @@ function exportPricelist(){
 // ── MATERIAL PRICELIST END ─────────────────────────────────────────────────
 
 
+// ── AUTO BACKUP GOOGLE DRIVE ───────────────────────────────────────────────
+
+const BACKUP_EDGE_URL = 'https://uutkxrsalpzfvfjtsnoq.supabase.co/functions/v1/auto-backup';
+
+async function loadBackupDashboard(){
+  if(!currentUser?.supaAuthId) return;
+  try {
+    // Load config dari Supabase
+    const { data: cfg } = await supa.from('system_config')
+      .select('key,value').like('key','backup%');
+    const map = {};
+    cfg?.forEach(r => { map[r.key] = JSON.parse(r.value); });
+
+    // Update UI config
+    const el = id => document.getElementById(id);
+    if(el('backup-time-input'))    el('backup-time-input').value    = map.backup_time || '03:00';
+    if(el('backup-enabled-toggle')) el('backup-enabled-toggle').checked = map.backup_enabled !== 'false';
+    if(el('backup-enabled-label')) el('backup-enabled-label').textContent = map.backup_enabled !== 'false' ? 'Aktif' : 'Nonaktif';
+    if(el('backup-folder-name'))   el('backup-folder-name').textContent = map.backup_folder || 'OKOMURAL_Backup';
+    if(el('backup-schedule-display')) el('backup-schedule-display').textContent = (map.backup_time || '03:00') + ' WIB setiap hari';
+
+    // Status
+    const lastRun = map.backup_last_run;
+    const lastStatus = map.backup_last_status || 'never';
+    if(el('backup-last-run')) el('backup-last-run').textContent = lastRun
+      ? new Date(lastRun).toLocaleString('id-ID', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+      : 'Belum pernah';
+    if(el('backup-last-status')) {
+      el('backup-last-status').textContent = lastStatus === 'success' ? '✅ Berhasil' : lastStatus === 'failed' ? '❌ Gagal' : '—';
+      el('backup-last-status').style.color = lastStatus === 'success' ? 'var(--green)' : lastStatus === 'failed' ? 'var(--red)' : 'var(--text3)';
+    }
+    if(el('backup-status-dot')) el('backup-status-dot').style.background = lastStatus === 'success' ? 'var(--green)' : lastStatus === 'failed' ? 'var(--red)' : 'var(--amber)';
+    if(el('backup-status-text')) el('backup-status-text').textContent = lastStatus === 'success' ? 'Backup berjalan normal' : lastStatus === 'failed' ? 'Backup terakhir gagal' : 'Belum ada backup';
+
+    // Load riwayat
+    await loadBackupLogs();
+  } catch(e){ console.warn('[Backup] loadBackupDashboard error:', e.message); }
+}
+
+async function loadBackupLogs(){
+  const tbody = document.getElementById('backup-log-tbody');
+  if(!tbody) return;
+  try {
+    const { data } = await supa.from('backup_logs')
+      .select('*').order('run_at',{ascending:false}).limit(10);
+    if(!data || data.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada riwayat backup</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const ok = r.status === 'success';
+      const timeStr = new Date(r.run_at).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      const durStr = r.duration_ms ? (r.duration_ms/1000).toFixed(1)+'s' : '—';
+      return `<tr>
+        <td style="font-size:11px;color:var(--text3)">${timeStr}</td>
+        <td><span class="badge ${ok?'badge-green':'badge-red'}">${ok?'Berhasil':'Gagal'}</span></td>
+        <td style="font-size:11px">${r.files || 0} file</td>
+        <td style="font-size:11px;color:var(--text3)">${durStr}</td>
+        <td>${r.drive_url && ok ? `<a href="${r.drive_url}" target="_blank" style="font-size:11px;color:var(--green)">📁 Drive</a>` : r.error_msg ? `<span style="font-size:10px;color:var(--red)" title="${r.error_msg}">⚠ Error</span>` : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){ console.warn('[Backup] loadBackupLogs error:', e.message); }
+}
+
+async function saveBackupConfig(){
+  if(!currentUser?.supaAuthId) return;
+  const time    = document.getElementById('backup-time-input')?.value || '03:00';
+  const enabled = document.getElementById('backup-enabled-toggle')?.checked !== false;
+  const label   = document.getElementById('backup-enabled-label');
+  if(label) label.textContent = enabled ? 'Aktif' : 'Nonaktif';
+  try {
+    await Promise.all([
+      supa.from('system_config').upsert({key:'backup_time',    value: JSON.stringify(time)}),
+      supa.from('system_config').upsert({key:'backup_enabled', value: JSON.stringify(String(enabled))}),
+    ]);
+    const schedEl = document.getElementById('backup-schedule-display');
+    if(schedEl) schedEl.textContent = time + ' WIB setiap hari';
+    showToast('success','Jadwal backup disimpan', time + ' WIB · ' + (enabled?'Aktif':'Nonaktif'));
+    logActivity('Backup','Jadwal backup diubah: '+time+' WIB, enabled='+enabled);
+  } catch(e){ showToast('error','Gagal simpan jadwal', e.message); }
+}
+
+async function runBackupNow(){
+  const btn = document.getElementById('backup-now-btn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Memproses...'; }
+  showToast('info','Backup dimulai...','Proses ini memakan waktu 10-30 detik');
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    const token = session?.access_token;
+    const res = await fetch(BACKUP_EDGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ trigger: 'manual' }),
+    });
+    const result = await res.json();
+    if(result.error) throw new Error(result.error);
+    showToast('success', 'Backup berhasil! ' + result.files + ' file', 'Durasi: ' + (result.duration_ms/1000).toFixed(1)+'s');
+    const driveLink = document.getElementById('backup-drive-link');
+    if(driveLink && result.driveUrl){
+      driveLink.href = result.driveUrl;
+      driveLink.style.display = 'inline-flex';
+    }
+    logActivity('Backup','Manual backup berhasil: '+result.files+' files');
+    await loadBackupDashboard();
+  } catch(e){
+    showToast('error','Backup gagal', e.message);
+    logActivity('Backup','Manual backup gagal: '+e.message);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '☁️ Backup Sekarang'; }
+  }
+}
+
+// ── AUTO BACKUP END ────────────────────────────────────────────────────────
 // ── PHASE 7: Finance → Supabase expenses ──────────────────────────────────
 
 // Cache expense_categories name → UUID
