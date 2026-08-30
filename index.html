@@ -3745,24 +3745,6 @@ async function hydrateUserFromSession(session) {
   </div>
 </div>
 
-<!-- receipt-modal-overlay -->
-<div class="receipt-modal-overlay" id="receipt-modal-overlay">
-  <div class="modal-box" style="max-width:340px;padding:0;overflow:hidden">
-    <div style="background:var(--bg3);padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:13px;font-weight:700">Struk Pembayaran</div>
-      <button onclick="closeReceipt()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1">×</button>
-    </div>
-    <div id="receipt-content" style="padding:20px;font-family:'Courier New',monospace;font-size:12px;line-height:1.8"></div>
-    <div style="padding:14px 20px;border-top:1px dashed var(--border2);display:flex;gap:8px">
-      <button class="shift-confirm-btn" style="flex:1;font-size:12px;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="printReceipt()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-        Print Struk
-      </button>
-      <button onclick="closeReceipt()" style="flex:1;padding:10px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;font-family:inherit;font-size:12px">Tutup</button>
-    </div>
-  </div>
-</div>
-
 <!-- stock-alert-overlay -->
 <div class="confirm-overlay" id="stock-alert-overlay">
   <div class="confirm-box" style="max-width:400px">
@@ -14394,5 +14376,25 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   </script>
+
+<!-- receipt-modal-overlay — GLOBAL, di luar semua screen -->
+<!-- receipt-modal-overlay -->
+<div class="receipt-modal-overlay" id="receipt-modal-overlay">
+  <div class="modal-box" style="max-width:340px;padding:0;overflow:hidden">
+    <div style="background:var(--bg3);padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;font-weight:700">Struk Pembayaran</div>
+      <button onclick="closeReceipt()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1">×</button>
+    </div>
+    <div id="receipt-content" style="padding:20px;font-family:'Courier New',monospace;font-size:12px;line-height:1.8"></div>
+    <div style="padding:14px 20px;border-top:1px dashed var(--border2);display:flex;gap:8px">
+      <button class="shift-confirm-btn" style="flex:1;font-size:12px;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="printReceipt()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print Struk
+      </button>
+      <button onclick="closeReceipt()" style="flex:1;padding:10px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;font-family:inherit;font-size:12px">Tutup</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
