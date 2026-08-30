@@ -12571,9 +12571,27 @@ function openMaterialModal(id){
           if(error) throw error;
           showToast('success', name+' diperbarui');
         } else {
-          const { error } = await supa.from('materials_master').insert(payload);
-          if(error) throw error;
-          showToast('success', name+' ditambahkan');
+          // Insert ke materials_master
+          const { data: matData, error: matErr } = await supa
+            .from('materials_master').insert(payload).select('id').single();
+          if(matErr) throw matErr;
+          const newMatId = matData.id;
+          // Auto-create inventory_stocks row untuk semua cabang (qty=0)
+          const branches = [
+            '11111111-0000-0000-0000-000000000001',
+            '11111111-0000-0000-0000-000000000002',
+            '11111111-0000-0000-0000-000000000003',
+          ];
+          await supa.from('inventory_stocks').insert(
+            branches.map(branch_id => ({
+              material_id: newMatId,
+              branch_id,
+              quantity: 0,
+              unit: unit,
+              min_stock_alert: 0,
+            }))
+          );
+          showToast('success', name+' ditambahkan ke semua cabang');
         }
         logActivity('Material', (edit?'Edit':'Tambah')+': '+name);
         loadMaterialsFromSupabase();
