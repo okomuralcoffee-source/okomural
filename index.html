@@ -6245,32 +6245,37 @@ async function renderLiveDashboard(){
 
   const today = new Date().toISOString().slice(0,10);
 
-  // Fetch SEMUA transaksi hari ini dari Supabase (semua cabang)
+  // Fetch semua transaksi hari ini + info kasir
+  // Pastikan Supabase session aktif dulu
   let allTx = [];
   try {
+    if(!currentUser?.supaAuthId){
+      const { data: { session } } = await supa.auth.getSession();
+      if(session && currentUser) currentUser.supaAuthId = session.user.id;
+    }
     const { data, error } = await supa
       .from('sales')
-      .select('id, total_amount, payment_method, payment_status, created_at, branch_id')
+      .select('id, total_amount, payment_method, payment_status, created_at, branch_id, staff_id, employees!sales_staff_id_fkey(name)')
       .eq('payment_status','paid')
       .gte('created_at', today + 'T00:00:00Z')
       .order('created_at', { ascending: false });
     if(!error && data) allTx = data;
-  } catch(e){ console.warn('[LiveDashboard] fetch error:', e.message); }
+    else if(error) console.warn('[LiveDashboard] fetch error:', error.message);
+  } catch(e){ console.warn('[LiveDashboard] exception:', e.message); }
 
-  // Global KPI — semua cabang
-  const totalRev  = allTx.reduce((s,t) => s + parseFloat(t.total_amount||0), 0);
-  const txCount   = allTx.length;
-  const cashRev   = allTx.filter(t=>t.payment_method==='cash').reduce((s,t)=>s+parseFloat(t.total_amount||0),0);
-  const qrisRev   = allTx.filter(t=>t.payment_method==='qris').reduce((s,t)=>s+parseFloat(t.total_amount||0),0);
-  const avgTx     = txCount > 0 ? Math.round(totalRev/txCount) : 0;
+  // Global KPI
+  const totalRev = allTx.reduce((s,t) => s + parseFloat(t.total_amount||0), 0);
+  const txCount  = allTx.length;
+  const cashRev  = allTx.filter(t=>t.payment_method==='cash').reduce((s,t)=>s+parseFloat(t.total_amount||0),0);
+  const qrisRev  = allTx.filter(t=>t.payment_method==='qris').reduce((s,t)=>s+parseFloat(t.total_amount||0),0);
+  const avgTx    = txCount > 0 ? Math.round(totalRev/txCount) : 0;
 
-  // KPI cards
   const kpi = [
-    {label:'Omzet Hari Ini',       value:'Rp '+totalRev.toLocaleString('id'), icon:'💰', color:'var(--green)'},
-    {label:'Total Transaksi',      value:txCount,                              icon:'🧾', color:'var(--blue)'},
-    {label:'Cash',                 value:'Rp '+cashRev.toLocaleString('id'),  icon:'💵', color:'var(--text)'},
-    {label:'QRIS',                 value:'Rp '+qrisRev.toLocaleString('id'),  icon:'📱', color:'var(--amber)'},
-    {label:'Rata-rata Transaksi',  value:'Rp '+avgTx.toLocaleString('id'),   icon:'📊', color:'var(--purple)'},
+    {label:'Omzet Hari Ini',      value:'Rp '+totalRev.toLocaleString('id'), icon:'💰', color:'var(--green)'},
+    {label:'Total Transaksi',     value:txCount,                              icon:'🧾', color:'var(--blue)'},
+    {label:'Cash',                value:'Rp '+cashRev.toLocaleString('id'),  icon:'💵', color:'var(--text)'},
+    {label:'QRIS',                value:'Rp '+qrisRev.toLocaleString('id'),  icon:'📱', color:'var(--amber)'},
+    {label:'Rata-rata Transaksi', value:'Rp '+avgTx.toLocaleString('id'),    icon:'📊', color:'var(--purple)'},
   ];
   el.innerHTML = kpi.map(k=>`
     <div class="ld-kpi-card">
@@ -6279,22 +6284,24 @@ async function renderLiveDashboard(){
       <div class="ld-kpi-value" style="color:${k.color}">${k.value}</div>
     </div>`).join('');
 
-  // Recent transaksi global (20 terbaru)
+  // Recent transaksi global
   const tbody = document.getElementById('ld-tx-tbody');
   if(tbody){
-    if(allTx.length === 0){
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text3)">Belum ada transaksi hari ini</td></tr>';
-    } else {
-      tbody.innerHTML = allTx.slice(0,20).map(t => `<tr>
-        <td style="font-size:11px;color:var(--text3)">${new Date(t.created_at).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'})}</td>
-        <td style="font-weight:600">Rp ${parseFloat(t.total_amount||0).toLocaleString('id')}</td>
-        <td><span class="badge badge-gray" style="font-size:10px">${(t.payment_method||'cash').toUpperCase()}</span></td>
-        <td><span class="badge badge-green" style="font-size:10px">Paid</span></td>
-      </tr>`).join('');
-    }
+    tbody.innerHTML = allTx.length === 0
+      ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada transaksi hari ini</td></tr>'
+      : allTx.slice(0,20).map(t => {
+          const kasir = t.employees?.name || '—';
+          return `<tr>
+            <td style="font-size:11px;color:var(--text3)">${new Date(t.created_at).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'})}</td>
+            <td style="font-weight:600">Rp ${parseFloat(t.total_amount||0).toLocaleString('id')}</td>
+            <td><span class="badge badge-gray" style="font-size:10px">${(t.payment_method||'cash').toUpperCase()}</span></td>
+            <td style="font-size:11px;color:var(--text3)">${kasir}</td>
+            <td><span class="badge badge-green" style="font-size:10px">Paid</span></td>
+          </tr>`;
+        }).join('');
   }
 
-  // ── Per Cabang breakdown ─────────────────────────────────────────────────
+  // Per Cabang breakdown
   const BRANCH_UUID_TO_NAME = {
     '11111111-0000-0000-0000-000000000001': 'HQ Indrapura',
     '11111111-0000-0000-0000-000000000002': 'Cart #1 Sukamulya',
@@ -6305,37 +6312,42 @@ async function renderLiveDashboard(){
   if(cabangEl){
     const branchMap = {};
     allTx.forEach(t => {
-      const bName = BRANCH_UUID_TO_NAME[t.branch_id] || t.branch_id?.slice(0,8) || 'Unknown';
-      if(!branchMap[bName]) branchMap[bName] = { rev: 0, count: 0, txs: [] };
+      const bName = BRANCH_UUID_TO_NAME[t.branch_id] || 'Cabang Lain';
+      if(!branchMap[bName]) branchMap[bName] = { rev:0, count:0, txs:[] };
       branchMap[bName].rev   += parseFloat(t.total_amount||0);
       branchMap[bName].count += 1;
       branchMap[bName].txs.push(t);
     });
 
-    if(Object.keys(branchMap).length === 0){
-      cabangEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-size:12px">Belum ada transaksi hari ini</div>';
-    } else {
-      cabangEl.innerHTML = Object.entries(branchMap).map(([name, d]) => `
+    cabangEl.innerHTML = Object.keys(branchMap).length === 0
+      ? '<div style="text-align:center;padding:24px;color:var(--text3);font-size:12px">Belum ada transaksi hari ini</div>'
+      : Object.entries(branchMap).map(([name, d]) => `
         <div style="background:var(--bg2);border-radius:8px;padding:14px;margin-bottom:10px;border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <div style="font-weight:600;font-size:13px">${name}</div>
-            <div style="font-size:12px;color:var(--text3)">${d.count} transaksi</div>
+            <div style="font-size:11px;color:var(--text3)">${d.count} transaksi</div>
           </div>
           <div style="font-size:18px;font-weight:700;color:var(--green);margin-bottom:10px">Rp ${d.rev.toLocaleString('id')}</div>
           <table style="width:100%;font-size:11px;border-collapse:collapse">
-            <thead><tr style="color:var(--text3)"><th style="text-align:left;padding:4px 0">Waktu</th><th style="text-align:right;padding:4px 0">Total</th><th style="text-align:right;padding:4px 0">Metode</th></tr></thead>
+            <thead><tr style="color:var(--text3)">
+              <th style="text-align:left;padding:3px 0">Waktu</th>
+              <th style="text-align:left;padding:3px 0">Kasir</th>
+              <th style="text-align:right;padding:3px 0">Total</th>
+              <th style="text-align:right;padding:3px 0">Metode</th>
+            </tr></thead>
             <tbody>${d.txs.slice(0,5).map(t=>`<tr>
               <td style="padding:3px 0;color:var(--text3)">${new Date(t.created_at).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'})}</td>
+              <td style="padding:3px 0;color:var(--text2)">${t.employees?.name||'—'}</td>
               <td style="text-align:right;font-weight:500">Rp ${parseFloat(t.total_amount||0).toLocaleString('id')}</td>
               <td style="text-align:right"><span class="badge badge-gray" style="font-size:9px">${(t.payment_method||'cash').toUpperCase()}</span></td>
             </tr>`).join('')}
-            ${d.txs.length > 5 ? `<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:4px 0">+${d.txs.length-5} transaksi lainnya</td></tr>` : ''}
+            ${d.txs.length > 5 ? `<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:4px 0;font-size:10px">+${d.txs.length-5} transaksi lainnya</td></tr>` : ''}
             </tbody>
           </table>
         </div>`).join('');
-    }
   }
 }
+
 
 
 function syncLiveDashboard(){
