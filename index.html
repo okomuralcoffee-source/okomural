@@ -5145,12 +5145,16 @@ function goToLauncher(){
   document.getElementById('lnc-code-input').focus();
   // Hydrate semua data dari Supabase di background (non-blocking)
   if(typeof initAllSupabaseData === 'function') initAllSupabaseData();
+  // Load active shift dari Supabase agar semua akun lihat shift yang sama
+  if(typeof loadActiveShiftFromSupabase === 'function') loadActiveShiftFromSupabase();
   // Pre-load employee UUID cache untuk attendance
   preloadEmployeeUUIDCache();
   // Pre-load product UUID dari Supabase agar checkout bisa pakai UUID benar
   loadProductsFromSupabase();
   // Pre-load karyawan dari Supabase untuk Quick Attendance + HR module
   loadKaryawanFromSupabase();
+  // Restore shift aktif dari Supabase (cross-device)
+  setTimeout(loadActiveShiftFromSupabase, 1500);
   // Phase 9: init realtime subscriptions
   setTimeout(initRealtimeSubscriptions, 1000);
   // Keep-alive: ping langsung + setiap 4 menit agar tidak cold start
@@ -5323,9 +5327,23 @@ function updateLauncherUser(){document.getElementById('lnc-avatar').textContent=
 function showStaffCard(code,s){document.getElementById('lnc-s-avatar').textContent=s.init;document.getElementById('lnc-s-name').textContent=s.name;document.getElementById('lnc-s-role').textContent=s.role;document.getElementById('lnc-s-badge').textContent=code;document.getElementById('lnc-staff-card').classList.add('visible')}
 function hideStaffCard(){document.getElementById('lnc-staff-card').classList.remove('visible')}
 function handleAtt(type){
-  const _inp=document.getElementById('lnc-code-input'), code=_inp?_inp.value.trim():'', s=STAFF_DB[code];
+  const _inp=document.getElementById('lnc-code-input'), code=_inp?_inp.value.trim():'';
   if(!code){flashInp();showToast('error','Kode kosong','Masukkan kode staf dulu.');return}
+  // Jika STAFF_DB belum ter-load, load dulu dari Supabase lalu retry
+  if(Object.keys(STAFF_DB).length === 0){
+    showToast('info','Memuat data karyawan...','');
+    loadKaryawanFromSupabase().then(()=>{
+      const s2 = STAFF_DB[code];
+      if(!s2){flashInp();showToast('error','Tidak ditemukan','"'+code+'" tidak terdaftar.');return;}
+      _doHandleAtt(type, code, s2);
+    });
+    return;
+  }
+  const s=STAFF_DB[code];
   if(!s){flashInp();showToast('error','Tidak ditemukan','"'+code+'" tidak terdaftar.');return}
+  _doHandleAtt(type, code, s);
+}
+function _doHandleAtt(type, code, s){
   if(attLog.find(l=>l.code===code&&l.type===type)){
     showToast('error','Duplikasi',type==='in'?s.name+' sudah clock in.':s.name+' belum clock in.');return
   }
@@ -12617,6 +12635,46 @@ async function saveKaryawanToSupabase(data, supaId){
   } catch(e){ showToast('error','Gagal simpan karyawan', e.message); }
 }
 
+// ── SHIFT: Load aktif dari Supabase ──────────────────────────────────────
+
+async function loadActiveShiftFromSupabase(){
+  // Restore shift aktif dari Supabase saat login/refresh
+  // Sehingga semua akun (kasir, owner, manajer) lihat shift yang sama
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    if(!session) return;
+    const branchUUID = getBranchUUID();
+    const { data, error } = await supa
+      .from('pos_shifts')
+      .select('id, branch_id, opened_at, opening_cash, open_notes, status, employee_id')
+      .eq('branch_id', branchUUID)
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if(error){ console.warn('[Shift] loadActive error:', error.message); return; }
+    if(!data){ console.log('[Shift] No active shift for branch:', branchUUID.slice(0,8)); return; }
+    // Ada shift aktif di Supabase — restore ke memory
+    if(!activeShift || activeShift.supaId !== data.id){
+      activeShift = {
+        id:          data.id,
+        supaId:      data.id,
+        openedAt:    data.opened_at,
+        openingCash: data.opening_cash || 0,
+        notes:       data.open_notes || '',
+        kasir:       currentUser?.name || '—',
+        branchId:    activeBranch?.id || 'CAB-001',
+        totalSales:  0,
+        transactions: [],
+      };
+      saveShift(activeShift);
+      console.log('[Shift] Restored from Supabase:', data.id.slice(0,8));
+      // Update UI shift sidebar
+      if(typeof syncShiftSidebar === 'function') syncShiftSidebar();
+    }
+  } catch(e){ console.warn('[Shift] loadActive exception:', e.message); }
+}
+
 // ── FASE 2: SUPPLIER CRUD ─────────────────────────────────────────────────
 
 let SUPPLIERS_DB = []; // Cache dari Supabase
@@ -13746,12 +13804,11 @@ function initRealtimeSubscriptions(){
       console.log('[Phase9] Sales realtime event:', payload.eventType);
       // Re-render live dashboard jika sedang tampil
       const liveModule = document.getElementById('module-live-dashboard');
-      const isLiveVisible = liveModule && (
-        liveModule.style.display !== 'none' &&
-        liveModule.style.display !== '' ||
-        liveModule.classList.contains('active')
-      );
-      if(isLiveVisible) renderLiveDashboard();
+      // Cek berbagai cara module bisa aktif
+      const screenApp = document.getElementById('screen-app');
+      const appActive = screenApp?.classList.contains('active');
+      const modNotHidden = liveModule && getComputedStyle(liveModule).display !== 'none';
+      if(appActive && modNotHidden) renderLiveDashboard();
       else {
         // Update badge/stat di sidebar saja
         if(activeShift && payload.eventType === 'INSERT'){
@@ -14219,29 +14276,27 @@ function confirmOpenShift(){
   // ── SUPABASE: INSERT ke pos_shifts ────────────────────────────────────
   console.log('[Phase2] Open shift — supaAuthId:', currentUser?.supaAuthId?.slice(0,8) || 'null',
     '| branchUUID:', getBranchUUID().slice(0,8), '| staffUUID:', getStaffUUID()?.slice(0,8) || 'null');
-  if (currentUser?.supaAuthId) {
-    (async () => {
-      try {
-        const { data, error } = await supa.from('pos_shifts').insert({
-          branch_id:    getBranchUUID(),
-          employee_id:  getStaffUUID(),
-          status:       'open',
-          opening_cash: opening,
-          open_notes:   notes || null,
-          opened_at:    new Date().toISOString(),
-        }).select('id').single();
-        if (error) {
-          console.warn('Supabase open shift error:', error.message);
-        } else if (data?.id) {
-          activeShift.supaId = data.id;
-          saveShift(activeShift);
-          console.log('Shift synced to Supabase:', data.id);
-        }
-      } catch(e) {
-        console.warn('Supabase open shift exception:', e.message);
+  // Simpan shift ke Supabase — tidak perlu supaAuthId, session sudah cukup
+  (async () => {
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if(!session) return;
+      const { data, error } = await supa.from('pos_shifts').insert({
+        branch_id:    getBranchUUID(),
+        employee_id:  getStaffUUID() || null,
+        status:       'open',
+        opening_cash: opening,
+        open_notes:   notes || null,
+        opened_at:    new Date().toISOString(),
+      }).select('id').single();
+      if(error){ console.warn('Supabase open shift error:', error.message); }
+      else if(data?.id){
+        activeShift.supaId = data.id;
+        saveShift(activeShift);
+        console.log('[Shift] Synced to Supabase:', data.id.slice(0,8));
       }
-    })();
-  }
+    } catch(e){ console.warn('Supabase open shift exception:', e.message); }
+  })();
 
   // Refresh badge setiap menit
   clearInterval(window._shiftTimer);
