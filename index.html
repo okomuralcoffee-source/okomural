@@ -4401,13 +4401,7 @@ let CABANG_DB = [
   {id:'CAB-002', nama:'Cart #1 Sukamulya', alamat:'Sukamulya',    telp:'', status:'aktif', type:'cart'},
   {id:'CAB-003', nama:'Cart #2 Petapahan', alamat:'Petapahan',    telp:'', status:'aktif', type:'cart'},
 ];
-let KARYAWAN_DB = [
-  {id:'EMP-001',nama:'Habib Dwi Zakaria',kode:'OKO-001',posisi:'Owner',gaji:0,hp:'08111111111',email:'adminoko@okomural.internal',status:'aktif'},
-  {id:'EMP-002',nama:'Dewi Sartika',kode:'OKO-002',posisi:'Manajer',gaji:6500000,hp:'08222222222',email:'dewi@okomural.com',status:'aktif'},
-  {id:'EMP-003',nama:'Rizki Pratama',kode:'OKO-003',posisi:'Kasir',gaji:4200000,hp:'08333333333',email:'kasir@okomural.com',status:'aktif'},
-  {id:'EMP-004',nama:'Anisa Nurul',kode:'OKO-004',posisi:'Barista',gaji:3800000,hp:'08444444444',email:'anisa@okomural.com',status:'izin'},
-  {id:'EMP-005',nama:'Rizal Fauzi',kode:'OKO-005',posisi:'Manajer',gaji:6000000,hp:'08555555555',email:'rizal@okomural.com',status:'aktif'},
-];
+let KARYAWAN_DB = []; // Loaded from Supabase employees table
 let PO_DB = [];
 /* ── CAPEX (Capital Expenditure) Logs ── */
 let CAPEX_DB = [
@@ -4511,7 +4505,7 @@ function loadAllLocalData(){
   ATTENDANCE_LOG= lsLoad('okomural_att_log', ATTENDANCE_LOG);
   PRICELIST_DB  = lsLoad(LS_KEYS.pricelist, PRICELIST_DB);
   ATTENDANCE_LOG= lsLoad('okomural_att_log', ATTENDANCE_LOG);
-  KARYAWAN_DB   = lsLoad(LS_KEYS.karyawan, KARYAWAN_DB);
+  // KARYAWAN_DB loaded from Supabase (not localStorage)
   CAPEX_DB      = lsLoad(LS_KEYS.capex,    CAPEX_DB);
   capexIdCounter= CAPEX_DB.length + 1;
   CAPITAL_DB    = lsLoad(LS_KEYS.capital,  CAPITAL_DB);
@@ -4536,7 +4530,7 @@ function loadAllLocalData(){
 // Wrapper save — panggil ini setelah setiap perubahan data
 function saveCABANG()   { lsSave(LS_KEYS.cabang,   CABANG_DB); }
 function saveUSERS()    { lsSave(LS_KEYS.users,     USER_DB); }
-function saveKARYAWAN() { lsSave(LS_KEYS.karyawan,  KARYAWAN_DB); }
+function saveKARYAWAN() { /* Supabase is source of truth — no localStorage */ }
 function saveCAPEX()    { lsSave(LS_KEYS.capex,     CAPEX_DB); }
 function saveCAPITAL()  { lsSave(LS_KEYS.capital,   CAPITAL_DB); }
 function saveCRM()      { lsSave(LS_KEYS.crm,       CRM_MEMBERS); }
@@ -5151,6 +5145,8 @@ function goToLauncher(){
   preloadEmployeeUUIDCache();
   // Pre-load product UUID dari Supabase agar checkout bisa pakai UUID benar
   loadProductsFromSupabase();
+  // Pre-load karyawan dari Supabase untuk Quick Attendance + HR module
+  loadKaryawanFromSupabase();
   // Phase 9: init realtime subscriptions
   setTimeout(initRealtimeSubscriptions, 1000);
   // Keep-alive: ping langsung + setiap 4 menit agar tidak cold start
@@ -5280,7 +5276,7 @@ function showModule(mod){
       renderAttendanceModule();
     },
     'finance':renderCashRecon,
-    'hr':renderHRTable,
+    'hr': async ()=>{ await loadKaryawanFromSupabase(); renderHRTable(); },
     'crm': async () => {
       await loadCRMFromSupabase();
       renderCRMTable();
@@ -8863,38 +8859,33 @@ function confirmHapusProduk(id){
     logActivity('Menu', 'Hapus produk: '+item.name);
   });
 }
-function openKaryawanModal(){
-  openGModal('Tambah Karyawan Baru',
+function openKaryawanModal(editId){
+  const emp = editId ? KARYAWAN_DB.find(k=>k.id===editId) : null;
+  const isEdit = !!emp;
+  openGModal(isEdit ? 'Edit Karyawan — '+emp.nama : 'Tambah Karyawan Baru',
     `<div class="gfield-row">
-      <div class="gfield"><label>Nama Lengkap</label><input id="hr-nama" type="text" placeholder="Nama karyawan..."></div>
-      <div class="gfield"><label>Kode Staf</label><input id="hr-kode" type="text" placeholder="OKO-006" maxlength="7"></div>
+      <div class="gfield"><label>Nama Lengkap</label><input id="hr-nama" type="text" value="${emp?.nama||''}" placeholder="Nama karyawan..."></div>
+      <div class="gfield"><label>Kode Staf</label><input id="hr-kode" type="text" value="${emp?.kode||''}" placeholder="OKO-006" maxlength="15"></div>
     </div>
-    <div class="gfield"><label>Posisi</label><select id="hr-posisi" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px"><option>Kasir</option><option>Barista</option><option>Manajer</option></select></div>
+    <div class="gfield"><label>Posisi</label><select id="hr-posisi" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:2px;padding:9px 12px;color:var(--text);font-size:13px">
+      ${['Kasir','Barista','Manajer','Owner'].map(p=>`<option${emp?.posisi===p?' selected':''}>${p}</option>`).join('')}
+    </select></div>
     <div class="gfield-row">
-      <div class="gfield"><label>Gaji Pokok (Rp)</label><input id="hr-gaji" type="number" placeholder="4000000"></div>
-      <div class="gfield"><label>No. HP</label><input id="hr-hp" type="tel" placeholder="08xx..."></div>
-    </div>
-    <div class="gfield"><label>Email Login</label><input id="hr-email" type="email" placeholder="nama@okomural.com"></div>`,
-    'Tambah Karyawan',
-    ()=>{
-      const nama=document.getElementById('hr-nama').value.trim();
-      const kode=document.getElementById('hr-kode').value.trim().toUpperCase();
-      const posisi=document.getElementById('hr-posisi').value;
-      const gaji=parseInt(document.getElementById('hr-gaji').value)||0;
-      const hp=document.getElementById('hr-hp').value.trim();
-      const email=document.getElementById('hr-email').value.trim();
-      if(!nama){showToast('error','Nama karyawan kosong');return;}
-      if(!kode.match(/^OKO-\d{3}$/)){showToast('error','Format kode salah','Gunakan format OKO-XXX');return;}
-      const newId='EMP-'+(KARYAWAN_DB.length+1).toString().padStart(3,'0');
-      const newKar={id:newId,nama,kode,posisi,gaji,hp,email,status:'aktif'};
-      KARYAWAN_DB.push(newKar);
-      STAFF_DB[kode]={name:nama,role:posisi,init:nama.split(' ').map(w=>w[0]).slice(0,2).join('')};
-      if(email) ACCOUNTS[email]={name:nama,init:nama.split(' ').map(w=>w[0]).slice(0,2).join(''),role:posisi,access:posisi==='Kasir'||posisi==='Barista'?'pos':'launcher'};
-      saveKARYAWAN(); // persist karyawan baru ke localStorage
-      if(typeof saveKaryawanToSupabase === 'function')
-        saveKaryawanToSupabase({nama,nik:'',jabatan:posisi,gaji}).then(sid=>{ if(sid) newKar.supaId=sid; });
-      renderHRTable();
-      showToast('success',nama+' ditambahkan','Kode: '+kode+' · '+posisi);
+      <div class="gfield"><label>Gaji Pokok (Rp)</label><input id="hr-gaji" type="number" value="${emp?.gaji||''}" placeholder="4000000"></div>
+      <div class="gfield"><label>No. HP</label><input id="hr-hp" type="tel" value="${emp?.hp||''}" placeholder="08xx..."></div>
+    </div>`,
+    isEdit ? 'Simpan Perubahan' : 'Tambah Karyawan',
+    async ()=>{
+      const nama  = document.getElementById('hr-nama').value.trim();
+      const kode  = document.getElementById('hr-kode').value.trim().toUpperCase();
+      const posisi= document.getElementById('hr-posisi').value;
+      const gaji  = parseInt(document.getElementById('hr-gaji').value)||0;
+      const hp    = document.getElementById('hr-hp').value.trim();
+      if(!nama){ showToast('error','Nama karyawan kosong'); return; }
+      if(!kode) { showToast('error','Kode staf wajib diisi'); return; }
+      await saveKaryawanToSupabase({nama,kode,posisi,gaji,hp}, isEdit ? emp.supaId : null);
+      showToast('success', nama+(isEdit?' diperbarui':' ditambahkan'), kode+' · '+posisi);
+      logActivity('HR', (isEdit?'Edit':'Tambah')+' karyawan: '+nama);
     }
   );
 }
@@ -8946,17 +8937,21 @@ function renderHRTable(){
     <td><span class="badge ${statusColor[k.status]||'badge-gray'}">${k.status.charAt(0).toUpperCase()+k.status.slice(1)}</span></td>
     <td>${k.gaji?'Rp '+k.gaji.toLocaleString('id'):'—'}</td>
     <td style="display:flex;gap:4px">
-      <button class="btn btn-secondary btn-sm" onclick="openDetailKaryawan('${k.nama}','${k.id}','${k.posisi}','Rp ${k.gaji.toLocaleString('id')}')">Edit</button>
+      <button class="btn btn-secondary btn-sm" onclick="openKaryawanModal('${k.id}')">Edit</button>
       <button class="btn btn-danger btn-sm" onclick="hapusKaryawan('${k.id}','${k.nama}')">Hapus</button>
     </td>
   </tr>`).join('');
 }
 function hapusKaryawan(id, nama){
-  openConfirm('Hapus Karyawan', '"'+nama+'" akan dihapus permanen dari sistem. Tidak bisa dibatalkan.', 'Hapus', ()=>{
-    const idx = KARYAWAN_DB.findIndex(k => k.id === id);
-    if(idx > -1){ KARYAWAN_DB.splice(idx, 1); saveKARYAWAN(); }
-    renderHRTable();
-    showToast('success', nama + ' dihapus dari sistem');
+  openConfirm('Hapus Karyawan', '"'+nama+'" akan dihapus permanen dari sistem.', 'Hapus', async ()=>{
+    try {
+      const { error } = await supa.from('employees').delete().eq('id', id);
+      if(error) throw error;
+      showToast('success', nama+' dihapus');
+      logActivity('HR','Hapus karyawan: '+nama);
+      await loadKaryawanFromSupabase();
+      renderHRTable();
+    } catch(e){ showToast('error','Gagal hapus', e.message); }
   });
 }
 function openMemberModal(){
@@ -12446,23 +12441,7 @@ async function loadAttendanceFromSupabase(){
   } catch(e){ console.warn('[Phase5] loadAttendanceFromSupabase error:', e.message); }
 }
 // Save karyawan baru → INSERT employees
-async function saveKaryawanToSupabase(karyawan){
-  try {
-    const { data, error } = await supa
-      .from('employees')
-      .insert({
-        name:        karyawan.nama,
-        nik:         karyawan.nik || null,
-        position:    karyawan.jabatan,
-        branch_id:   currentUser?.branch_id || null,
-        base_salary: karyawan.gaji || 0,
-        is_active:   true
-      })
-      .select('id').single();
-    if(error){ console.warn('Karyawan insert error:', error.message); return null; }
-    return data.id;
-  } catch(e){ console.warn('saveKaryawanToSupabase error:', e); return null; }
-}
+// saveKaryawanToSupabase moved to HR Supabase section below
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 6 — CRM
    Members CRUD + points lookup → Supabase
@@ -12602,6 +12581,66 @@ async function runBackupNow(){
   } finally {
     if(btn){ btn.disabled=false; btn.textContent='☁️ Backup Sekarang'; }
   }
+}
+
+// ── HR: KARYAWAN DARI SUPABASE ────────────────────────────────────────────
+
+async function loadKaryawanFromSupabase(){
+  try {
+    const { data, error } = await supa
+      .from('employees')
+      .select('id, name, employee_code, position, salary, phone, hire_date, status, role_id, branch_id, roles(name), branches(name)')
+      .order('employee_code');
+    if(error) throw error;
+    // Full replace KARYAWAN_DB
+    KARYAWAN_DB.length = 0;
+    (data||[]).forEach(e => {
+      KARYAWAN_DB.push({
+        id:     e.id,
+        nama:   e.name,
+        kode:   e.employee_code || e.id.slice(0,8),
+        posisi: e.position || e.roles?.name || '—',
+        gaji:   e.salary || 0,
+        hp:     e.phone || '',
+        status: e.status || 'aktif',
+        cabang: e.branches?.name || 'Semua Cabang',
+        role:   e.roles?.name || '',
+        supaId: e.id,
+      });
+    });
+    console.log('[HR] KARYAWAN_DB loaded from Supabase:', KARYAWAN_DB.length, 'entries');
+    // Update stat karyawan aktif di HR header
+    const aktif = KARYAWAN_DB.filter(k=>k.status==='aktif').length;
+    const subEl = document.querySelector('#module-hr .page-header-left p');
+    if(subEl) subEl.textContent = aktif + ' karyawan aktif';
+    const statEl = document.getElementById('hr-stat-karyawan');
+    if(statEl) statEl.textContent = KARYAWAN_DB.length;
+    const payEl = document.getElementById('hr-stat-payroll');
+    const totalPayroll = KARYAWAN_DB.reduce((s,k)=>s+(k.gaji||0),0);
+    if(payEl) payEl.textContent = 'Rp '+totalPayroll.toLocaleString('id');
+  } catch(e){ console.warn('[HR] loadKaryawan error:', e.message); }
+}
+
+async function saveKaryawanToSupabase(data, supaId){
+  try {
+    if(supaId){
+      // Update
+      const { error } = await supa.from('employees').update({
+        name: data.nama, employee_code: data.kode, position: data.posisi,
+        salary: data.gaji||0, phone: data.hp||null, status: data.status||'aktif',
+      }).eq('id', supaId);
+      if(error) throw error;
+    } else {
+      // Insert baru (tanpa auth — hanya data HR)
+      const { error } = await supa.from('employees').insert({
+        name: data.nama, employee_code: data.kode, position: data.posisi,
+        salary: data.gaji||0, phone: data.hp||null, status: data.status||'aktif',
+      });
+      if(error) throw error;
+    }
+    await loadKaryawanFromSupabase();
+    renderHRTable();
+  } catch(e){ showToast('error','Gagal simpan karyawan', e.message); }
 }
 
 // ── FASE 2: SUPPLIER CRUD ─────────────────────────────────────────────────
