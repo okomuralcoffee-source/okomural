@@ -4361,13 +4361,7 @@ const ACCOUNTS={
   'owner@okomural.com':{name:'Habib Dwi Zakaria',init:'HZ',role:'Owner',access:'launcher'},
   'kasir@okomural.com':{name:'Rizki Pratama',init:'RP',role:'Kasir',access:'pos'},
 };
-const STAFF_DB={
-  'OKO-001':{name:'Arief Budiman',role:'Kasir',init:'AB'},
-  'OKO-002':{name:'Siti Rahayu',role:'Barista',init:'SR'},
-  'OKO-003':{name:'Denny Kusuma',role:'Kasir',init:'DK'},
-  'OKO-004':{name:'Putri Handayani',role:'Barista',init:'PH'},
-  'OKO-005':{name:'Rizal Fauzi',role:'Manajer',init:'RF'},
-};
+let STAFF_DB = {}; // Populated from Supabase employees via loadKaryawanFromSupabase()
 let currentUser=ACCOUNTS['owner@okomural.com'],cart=[],numpadStr='',cartTotal=0,_checkoutFinalTotal=0,attLog=[],clockInterval=null;
 
 function saveAttLog(){
@@ -12609,6 +12603,16 @@ async function loadKaryawanFromSupabase(){
       });
     });
     console.log('[HR] KARYAWAN_DB loaded from Supabase:', KARYAWAN_DB.length, 'entries');
+    // Rebuild STAFF_DB dari KARYAWAN_DB agar Quick Attendance pakai data benar
+    Object.keys(STAFF_DB).forEach(k => delete STAFF_DB[k]);
+    KARYAWAN_DB.forEach(k => {
+      if(k.kode) STAFF_DB[k.kode] = {
+        name: k.nama,
+        role: k.posisi,
+        init: k.nama.split(' ').map(w=>w[0]).slice(0,2).join(''),
+      };
+    });
+    console.log('[HR] STAFF_DB rebuilt:', Object.keys(STAFF_DB).length, 'entries');
     // Update stat karyawan aktif di HR header
     const aktif = KARYAWAN_DB.filter(k=>k.status==='aktif').length;
     const subEl = document.querySelector('#module-hr .page-header-left p');
