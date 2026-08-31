@@ -13852,21 +13852,44 @@ function initRealtimeSubscriptions(){
       console.log('[Phase9] Inventory channel:', status);
     });
 
-  // ── Channel 3: pos_shifts → update shift info ─────────────────────────
+  // ── Channel 3: pos_shifts → sync shift cross-device ──────────────────
   const shiftCh = supa
     .channel('realtime-shifts')
     .on('postgres_changes', {
-      event:  'UPDATE',
+      event:  '*',  // INSERT + UPDATE + DELETE
       schema: 'public',
       table:  'pos_shifts',
-    }, payload => {
-      if(activeShift?.supaId === payload.new?.id){
-        activeShift.totalRevenue     = parseFloat(payload.new?.total_revenue) || activeShift.totalRevenue;
-        activeShift.totalTransactions= parseInt(payload.new?.total_transactions) || activeShift.totalTransactions;
-        syncShiftSidebar();
+      filter: `branch_id=eq.${getBranchUUID()}`,
+    }, async payload => {
+      console.log('[Phase9] Shift event:', payload.eventType, payload.new?.status);
+      if(payload.eventType === 'INSERT' || 
+        (payload.eventType === 'UPDATE' && payload.new?.status === 'open')) {
+        // Shift baru dibuka — load ke semua device
+        if(!activeShift) {
+          await loadActiveShiftFromSupabase();
+          updateShiftUI();
+          showToast('info', '🟢 Shift dibuka', 'Shift aktif di cabang ini');
+        }
+      } else if(payload.eventType === 'UPDATE' && payload.new?.status === 'closed') {
+        // Shift ditutup — clear di semua device
+        if(activeShift?.supaId === payload.new?.id || activeShift) {
+          activeShift = null;
+          try { localStorage.removeItem('oko_shift_' + (activeBranch?.id||'CAB-001')); } catch(e){}
+          updateShiftUI();
+          showToast('info', '🔴 Shift ditutup', 'Shift di cabang ini telah ditutup');
+        }
+      } else if(payload.eventType === 'UPDATE') {
+        // Update revenue/transaksi
+        if(activeShift?.supaId === payload.new?.id){
+          activeShift.totalRevenue      = parseFloat(payload.new?.total_revenue) || activeShift.totalRevenue;
+          activeShift.totalTransactions = parseInt(payload.new?.total_transactions) || activeShift.totalTransactions;
+          syncShiftSidebar();
+        }
       }
     })
-    .subscribe();
+    .subscribe(status => {
+      console.log('[Phase9] Shift channel:', status);
+    });
 
   _realtimeChannels = [salesCh, invCh, shiftCh];
   console.log('[Phase9] Realtime subscriptions initialized for branch:', getBranchUUID().slice(0,8));
@@ -14057,6 +14080,27 @@ function updateCheckoutBtn(){
 }
 
 /* ── SIDEBAR SHIFT SYNC ── */
+function updateShiftUI(){
+  // Update semua UI yang terkait shift — dipanggil saat shift berubah via realtime
+  syncShiftSidebar();
+  // Update POS shift badge
+  const shiftBadge = document.getElementById('pos-shift-badge');
+  if(shiftBadge){
+    shiftBadge.textContent = activeShift ? '● Shift Aktif' : '● Shift Tutup';
+    shiftBadge.style.color = activeShift ? 'var(--green)' : 'var(--red)';
+  }
+  // Update tombol Buka/Tutup Shift di POS
+  const openBtn  = document.getElementById('pos-open-shift-btn');
+  const closeBtn = document.getElementById('pos-close-shift-btn');
+  if(openBtn)  openBtn.style.display  = activeShift ? 'none' : '';
+  if(closeBtn) closeBtn.style.display = activeShift ? '' : 'none';
+  // Update launcher shift status jika ada
+  const lncShift = document.getElementById('lnc-shift-status');
+  if(lncShift) lncShift.textContent = activeShift ? 'Shift Aktif' : 'Shift Tutup';
+  // Re-render POS grid (shift lock/unlock)
+  if(typeof renderMenuGrid === 'function') renderMenuGrid('coffee');
+}
+
 function syncShiftSidebar(){
   const dot   = document.getElementById('sidebar-shift-dot');
   const label = document.getElementById('sidebar-shift-label');
