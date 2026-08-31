@@ -12646,7 +12646,7 @@ async function loadActiveShiftFromSupabase(){
     const branchUUID = getBranchUUID();
     const { data, error } = await supa
       .from('pos_shifts')
-      .select('id, branch_id, opened_at, opening_cash, open_notes, status, employee_id')
+      .select('id, branch_id, opened_at, opening_cash, open_notes, status, employee_id, employees(name)')
       .eq('branch_id', branchUUID)
       .eq('status', 'open')
       .order('opened_at', { ascending: false })
@@ -12654,7 +12654,8 @@ async function loadActiveShiftFromSupabase(){
       .maybeSingle();
     if(error){ console.warn('[Shift] loadActive error:', error.message); return; }
     if(!data){ console.log('[Shift] No active shift for branch:', branchUUID.slice(0,8)); return; }
-    // Ada shift aktif di Supabase — restore ke memory
+    // Ada shift aktif — nama kasir dari Supabase employees (bukan currentUser)
+    const kasirName = data.employees?.name || currentUser?.name || '—';
     if(!activeShift || activeShift.supaId !== data.id){
       activeShift = {
         id:          data.id,
@@ -12662,14 +12663,14 @@ async function loadActiveShiftFromSupabase(){
         openedAt:    data.opened_at,
         openingCash: data.opening_cash || 0,
         notes:       data.open_notes || '',
-        kasir:       currentUser?.name || '—',
+        kasir:       kasirName,
+        employeeId:  data.employee_id,
         branchId:    activeBranch?.id || 'CAB-001',
         totalSales:  0,
         transactions: [],
       };
       saveShift(activeShift);
-      console.log('[Shift] Restored from Supabase:', data.id.slice(0,8));
-      // Update UI shift sidebar
+      console.log('[Shift] Restored from Supabase:', data.id.slice(0,8), '| kasir:', kasirName);
       if(typeof syncShiftSidebar === 'function') syncShiftSidebar();
     }
   } catch(e){ console.warn('[Shift] loadActive exception:', e.message); }
@@ -13803,12 +13804,16 @@ function initRealtimeSubscriptions(){
     }, payload => {
       console.log('[Phase9] Sales realtime event:', payload.eventType);
       // Re-render live dashboard jika sedang tampil
-      const liveModule = document.getElementById('module-live-dashboard');
-      // Cek berbagai cara module bisa aktif
-      const screenApp = document.getElementById('screen-app');
-      const appActive = screenApp?.classList.contains('active');
-      const modNotHidden = liveModule && getComputedStyle(liveModule).display !== 'none';
-      if(appActive && modNotHidden) renderLiveDashboard();
+      // Selalu update Live Dashboard saat ada transaksi baru
+      // renderLiveDashboard async+lightweight — tidak masalah dipanggil background
+      renderLiveDashboard().catch(()=>{});
+      // Toast notif transaksi baru untuk Owner/Manajer
+      if(payload.eventType === 'INSERT' && payload.new?.total_amount){
+        const amt = parseFloat(payload.new.total_amount)||0;
+        if(currentUser?.role !== 'Kasir' && currentUser?.role !== 'Barista'){
+          showToast('success','💰 Transaksi baru masuk','Rp '+amt.toLocaleString('id'));
+        }
+      }
       else {
         // Update badge/stat di sidebar saja
         if(activeShift && payload.eventType === 'INSERT'){
