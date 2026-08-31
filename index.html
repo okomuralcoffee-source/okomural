@@ -8939,7 +8939,7 @@ function renderHRTable(){
 function hapusKaryawan(id, nama){
   openConfirm('Hapus Karyawan', '"'+nama+'" akan dihapus permanen dari sistem.', 'Hapus', async ()=>{
     try {
-      const { error } = await supa.from('employees').delete().eq('id', id);
+      const { error } = await supa.from('hr_employees').delete().eq('id', id);
       if(error) throw error;
       showToast('success', nama+' dihapus');
       logActivity('HR','Hapus karyawan: '+nama);
@@ -12582,8 +12582,8 @@ async function runBackupNow(){
 async function loadKaryawanFromSupabase(){
   try {
     const { data, error } = await supa
-      .from('employees')
-      .select('id, name, employee_code, position, salary, phone, hire_date, status, role_id, branch_id, roles(name), branches(name)')
+      .from('hr_employees')
+      .select('id, name, employee_code, position, salary, phone, hire_date, status, branch_id, branches(name)')
       .order('employee_code');
     if(error) throw error;
     // Full replace KARYAWAN_DB
@@ -12593,12 +12593,11 @@ async function loadKaryawanFromSupabase(){
         id:     e.id,
         nama:   e.name,
         kode:   e.employee_code || e.id.slice(0,8),
-        posisi: e.position || e.roles?.name || '—',
+        posisi: e.position || '—',
         gaji:   e.salary || 0,
         hp:     e.phone || '',
         status: e.status || 'aktif',
         cabang: e.branches?.name || 'Semua Cabang',
-        role:   e.roles?.name || '',
         supaId: e.id,
       });
     });
@@ -12627,19 +12626,15 @@ async function loadKaryawanFromSupabase(){
 
 async function saveKaryawanToSupabase(data, supaId){
   try {
+    const payload = {
+      name: data.nama, employee_code: data.kode||null, position: data.posisi,
+      salary: data.gaji||0, phone: data.hp||null, status: data.status||'aktif',
+    };
     if(supaId){
-      // Update
-      const { error } = await supa.from('employees').update({
-        name: data.nama, employee_code: data.kode, position: data.posisi,
-        salary: data.gaji||0, phone: data.hp||null, status: data.status||'aktif',
-      }).eq('id', supaId);
+      const { error } = await supa.from('hr_employees').update(payload).eq('id', supaId);
       if(error) throw error;
     } else {
-      // Insert baru (tanpa auth — hanya data HR)
-      const { error } = await supa.from('employees').insert({
-        name: data.nama, employee_code: data.kode, position: data.posisi,
-        salary: data.gaji||0, phone: data.hp||null, status: data.status||'aktif',
-      });
+      const { error } = await supa.from('hr_employees').insert(payload);
       if(error) throw error;
     }
     await loadKaryawanFromSupabase();
