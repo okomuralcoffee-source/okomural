@@ -4550,6 +4550,17 @@ const ACT_ICONS = {
 
 function logActivity(action, detail = ''){
   try {
+    // Simpan ke Supabase (fire-and-forget, semua device bisa lihat)
+    if(typeof supa !== 'undefined') {
+      supa.from('activity_logs').insert({
+        user_name: currentUser?.name || '—',
+        user_role: currentUser?.role || '—',
+        branch:    activeBranch?.nama || '—',
+        action,
+        detail,
+      }).then(() => {}).catch(() => {});
+    }
+    // Tetap simpan ke localStorage sebagai cache lokal
     const logs = lsLoad(LS_KEYS.actlog, []);
     logs.push({
       id:        'LOG-' + Date.now(),
@@ -4562,7 +4573,6 @@ function logActivity(action, detail = ''){
       action,
       detail,
     });
-    // Keep max 500 entries
     if(logs.length > 500) logs.splice(0, logs.length - 500);
     lsSave(LS_KEYS.actlog, logs);
   } catch(e){ console.warn('logActivity error:', e); }
@@ -5907,8 +5917,23 @@ function drawLineChart(canvasId, datasets, labels, opts={}) {
 let _ldTab = 'global';
 let _branchPeriod = 'hari';
 
-function renderActivityLog(){
-  const logs = getActivityLogs().slice().reverse(); // newest first
+async function renderActivityLog(){
+  // Load dari Supabase (cross-device) jika bisa, fallback ke localStorage
+  let logs = getActivityLogs().slice().reverse();
+  try {
+    const { data } = await supa.from('activity_logs')
+      .select('id, created_at, user_name, user_role, branch, action, detail')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if(data && data.length > 0){
+      logs = data.map(r => ({
+        id: r.id, timestamp: r.created_at,
+        user: r.user_name, role: r.user_role,
+        branch: r.branch, action: r.action, detail: r.detail,
+      }));
+    }
+  } catch(e) { /* fallback ke localStorage */ }
+  // newest first sudah dari Supabase
   const body = document.getElementById('actlog-body');
   const emptyEl = document.getElementById('actlog-empty');
   const summaryEl = document.getElementById('actlog-summary');
@@ -13755,7 +13780,7 @@ let _realtimeChannels = [];
 let _realtimeActive   = false;
 
 function initRealtimeSubscriptions(){
-  if(!currentUser?.supaAuthId) return;
+  if(!currentUser) return; // belum login
   if(_realtimeActive) return; // sudah subscribe
   _realtimeActive = true;
 
