@@ -4621,7 +4621,8 @@ function rebuildFinanceFromSession(){
     return el && el.classList.contains('active');
   };
   if(isModActive('live-dashboard')){
-    if(typeof renderLiveDashboard === 'function') renderLiveDashboard();
+    // Gunakan versi Supabase (bukan SESSION lokal)
+    if(typeof renderLiveDashboard === 'function') renderLiveDashboard().catch(()=>{});
   }
   if(isModActive('finance')){
     if(typeof renderCashRecon === 'function') renderCashRecon();
@@ -6087,156 +6088,9 @@ function toggleBranchTxDetail(cabId){
 }
 
 function renderBranchReport(period){
-  const container = document.getElementById('ld-branch-cards');
-  const totalEl   = document.getElementById('ld-branch-total-content');
-  if(!container) return;
-
-  const txs = getTxByPeriod(period);
-  const fmt = n => n.toLocaleString('id');
-  const periodLabel = period === 'hari' ? 'Hari Ini' : period === 'minggu' ? 'Minggu Ini' : 'Bulan Ini';
-
-  // Build per-branch stats
-  const branchStats = CABANG_DB.map(cab => {
-    const cabTxs = txs.filter(t => (t.source || 'CAB-001') === cab.id);
-    const rev    = cabTxs.reduce((s,t) => s+t.total, 0);
-    const hpp    = cabTxs.reduce((s,t) => s+(t.hpp||0), 0);
-    const profit = rev - hpp;
-    const cash   = cabTxs.filter(t=>t.method==='cash').reduce((s,t)=>s+t.total,0);
-    const qris   = cabTxs.filter(t=>t.method==='qris').reduce((s,t)=>s+t.total,0);
-    const card   = cabTxs.filter(t=>t.method==='card').reduce((s,t)=>s+t.total,0);
-    const count  = cabTxs.length;
-    const avg    = count > 0 ? Math.round(rev/count) : 0;
-    return { cab, rev, hpp, profit, cash, qris, card, count, avg, txs: cabTxs };
-  });
-
-  const totalRev = branchStats.reduce((s,b) => s+b.rev, 0);
-
-  // Render branch cards
-  container.innerHTML = branchStats.map(b => {
-    const pct    = totalRev > 0 ? ((b.rev/totalRev)*100).toFixed(1) : '0.0';
-    const icon   = b.cab.type === 'cart' ? '🛒' : '🏠';
-    const margin = b.rev > 0 ? ((b.profit/b.rev)*100).toFixed(1) : '0.0';
-    const cabId  = b.cab.id;
-
-    // Detail transaksi rows
-    const txRows = b.txs.length === 0
-      ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:11px">Belum ada transaksi ${periodLabel.toLowerCase()}</div>`
-      : b.txs.slice().reverse().map((t,i) => {
-          const dt = new Date(t.createdAt||Date.now());
-          const timeStr = dt.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
-          const itemStr = (t.items||[]).map(i=>i.name+(i.qty>1?` ×${i.qty}`:'')).join(', ');
-          const mIcon = t.method==='cash'?'💵':t.method==='qris'?'📱':'💳';
-          const typeTag = t.splitLabel
-            ? `<span style="font-size:9px;background:var(--amber-dim);color:var(--amber);border-radius:3px;padding:1px 4px">✂${t.splitLabel}</span>`
-            : t.isBulkCart
-            ? `<span style="font-size:9px;background:var(--blue-dim);color:var(--blue);border-radius:3px;padding:1px 4px">🛒Bulk</span>`
-            : '';
-          const voidTag = t.status==='void'
-            ? `<span style="font-size:9px;background:var(--red-dim);color:var(--red);border-radius:3px;padding:1px 4px">VOID</span>`
-            : '';
-          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">
-            <div style="font-size:10px;color:var(--text3);flex-shrink:0;width:34px">${timeStr}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${itemStr||'—'}</div>
-              <div style="font-size:10px;color:var(--text3);margin-top:1px">${t.kasir||'—'} ${typeTag}${voidTag}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:11px;font-weight:700;color:${t.status==='void'?'var(--red)':'var(--text)'}">${t.status==='void'?'—':'Rp '+fmt(t.total)}</div>
-              <div style="font-size:10px;color:var(--text3)">${mIcon} ${(t.method||'').toUpperCase()}</div>
-            </div>
-          </div>`;
-        }).join('');
-
-    return `<div style="background:var(--bg1);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:18px">${icon}</span>
-          <div>
-            <div style="font-size:13px;font-weight:700">${b.cab.nama}</div>
-            <div style="font-size:11px;color:var(--text3)">${periodLabel} · ${b.count} transaksi</div>
-          </div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:18px;font-weight:800;color:var(--green)">Rp ${fmt(b.rev)}</div>
-          <div style="font-size:10px;color:var(--text3)">${pct}% dari total</div>
-        </div>
-      </div>
-      <!-- Progress bar kontribusi -->
-      <div style="height:4px;background:var(--bg3);border-radius:2px;margin-bottom:12px">
-        <div style="width:${pct}%;height:100%;background:var(--green);border-radius:2px;transition:width .3s"></div>
-      </div>
-      <!-- Stats grid -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
-        <div style="text-align:center;background:var(--bg2);border-radius:6px;padding:8px">
-          <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Avg/Tx</div>
-          <div style="font-size:12px;font-weight:700">Rp ${fmt(b.avg)}</div>
-        </div>
-        <div style="text-align:center;background:var(--bg2);border-radius:6px;padding:8px">
-          <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Gross Profit</div>
-          <div style="font-size:12px;font-weight:700;color:${b.profit>=0?'var(--green)':'var(--red)'}">Rp ${fmt(b.profit)}</div>
-        </div>
-        <div style="text-align:center;background:var(--bg2);border-radius:6px;padding:8px">
-          <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Margin</div>
-          <div style="font-size:12px;font-weight:700;color:${parseFloat(margin)>=40?'var(--green)':'var(--amber)'}">${margin}%</div>
-        </div>
-      </div>
-      <!-- Payment breakdown + toggle -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px">
-          ${b.cash>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💵 Cash: Rp ${fmt(b.cash)}</span>`:''}
-          ${b.qris>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">📱 QRIS: Rp ${fmt(b.qris)}</span>`:''}
-          ${b.card>0?`<span style="background:var(--bg2);border-radius:4px;padding:3px 8px">💳 Kartu: Rp ${fmt(b.card)}</span>`:''}
-          ${b.count===0?`<span style="color:var(--text3)">Belum ada transaksi ${periodLabel.toLowerCase()}</span>`:''}
-        </div>
-        <button onclick="toggleBranchTxDetail('${cabId}')"
-          id="btn-branch-detail-${cabId}"
-          style="padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">
-          📋 Detail Transaksi
-        </button>
-      </div>
-      <!-- Detail Transaksi — collapsible -->
-      <div id="branch-tx-detail-${cabId}" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-        <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-bottom:6px">
-          RIWAYAT TRANSAKSI ${b.cab.nama.toUpperCase()} — ${periodLabel.toUpperCase()}
-        </div>
-        ${txRows}
-        ${b.txs.length>0?`<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:12px;font-weight:700;margin-top:4px;border-top:2px solid var(--border)">
-          <span>${b.count} transaksi</span>
-          <span style="color:var(--green)">Rp ${fmt(b.rev)}</span>
-        </div>`:''}
-      </div>
-    </div>`;
-  }).join('');
-
-  // Global total
-  if(totalEl){
-    const totalHpp    = branchStats.reduce((s,b)=>s+b.hpp, 0);
-    const totalProfit = totalRev - totalHpp;
-    const totalCount  = branchStats.reduce((s,b)=>s+b.count, 0);
-    const totalAvg    = totalCount > 0 ? Math.round(totalRev/totalCount) : 0;
-    const totalMargin = totalRev > 0 ? ((totalProfit/totalRev)*100).toFixed(1) : '0.0';
-
-    totalEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
-        <div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Total Revenue</div>
-          <div style="font-size:22px;font-weight:800;color:var(--green)">Rp ${fmt(totalRev)}</div>
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Total Transaksi</div>
-          <div style="font-size:22px;font-weight:800">${totalCount}</div>
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Total Gross Profit</div>
-          <div style="font-size:16px;font-weight:700;color:${totalProfit>=0?'var(--green)':'var(--red)'}">Rp ${fmt(totalProfit)}</div>
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Avg Margin</div>
-          <div style="font-size:16px;font-weight:700;color:${parseFloat(totalMargin)>=40?'var(--green)':'var(--amber)'}">${totalMargin}%</div>
-        </div>
-      </div>
-    `;
-  }
+  // Delegasikan ke renderLiveDashboard yang sudah load dari Supabase
+  // renderLiveDashboard handles both Global dan Per Cabang
+  if(typeof renderLiveDashboard === 'function') renderLiveDashboard().catch(()=>{});
 }
 
 async function renderLiveDashboard(){
