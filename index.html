@@ -2822,6 +2822,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'payment')">Metode Bayar</div>
       <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
+      <div class="s-item" onclick="switchSettings(this,'kategori');loadKategoriPanel()">🏷 Kategori Pengeluaran</div>
       <div class="s-item" onclick="switchSettings(this,'danger');showDangerZone()" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
@@ -3133,6 +3134,17 @@ async function hydrateUserFromSession(session) {
           <div style="text-align:center;padding:32px;color:var(--text3);font-size:12px">Belum ada kupon. Klik "🎟 Buat Kupon" untuk membuat.</div>
         </div>
       </div>
+
+        <!-- KATEGORI PENGELUARAN PANEL -->
+        <div id="settings-kategori" style="display:none">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">🏷 Kategori Pengeluaran</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Kelola kategori untuk input pengeluaran kasir dan Expenses & OPEX.</div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input type="text" id="kat-new-name" class="form-input" placeholder="Nama kategori baru..." style="flex:1">
+            <button class="btn btn-primary btn-sm" onclick="addKategoriPengeluaran()">+ Tambah</button>
+          </div>
+          <div id="kat-list"></div>
+        </div>
 
         <!-- DANGER ZONE PANEL -->
         <div id="settings-danger" style="display:none">
@@ -5433,7 +5445,15 @@ function showModule(mod){
     'live-dashboard': async ()=>{ await renderLiveDashboard(); },
     'activity-log':  renderActivityLog,
     'auto-backup':   loadBackupDashboard,
-    'exec-summary':renderExecSummary,
+    'exec-summary': async () => {
+      await Promise.all([
+        loadSupabaseSalesForTracking(),
+        loadExpensesFromSupabase(),
+        loadKaryawanFromSupabase(),
+        loadCapexFromSupabase(),
+      ]);
+      renderExecSummary();
+    },
     'health-score': async () => {
       await Promise.all([
         loadSupabaseSalesForTracking(),
@@ -8903,7 +8923,7 @@ function doConfirm(){if(confirmCallback)confirmCallback();closeConfirm();}
 function switchSettings(el,panel){
   document.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
   el.classList.add('active');
-  ['cabang','user','loyalitas','payment','kupon','branding','danger'].forEach(p=>{
+  ['cabang','user','loyalitas','payment','kupon','branding','kategori','danger'].forEach(p=>{
     const el2=document.getElementById('settings-'+p);
     if(el2)el2.style.display=p===panel?'':'none';
   });
@@ -12200,9 +12220,33 @@ showModule = function(mod){
    Ringkasan 1-halaman dari semua data yang ada
 ══════════════════════════════════════════════════ */
 function renderExecSummary(){
-  const d = BIZ_DATA.monthly;
-  const cur = d[d.length-1], prev = d[d.length-2];
-  const todayTx  = SESSION.transactions.filter(t => t.status === 'paid') || [];
+  // Build monthly dari SUPABASE_SALES_CACHE + OPEX_DB (real data)
+  const _buildMonthly = () => {
+    const map = {};
+    const allTx = [...(SUPABASE_SALES_CACHE||[]),
+      ...(SESSION.transactions||[]).filter(t=>t.status==='paid'&&!new Set((SUPABASE_SALES_CACHE||[]).map(s=>s.supaId)).has(t.supaId))];
+    allTx.forEach(t => {
+      const mo = (t.createdAt||t.time||'').slice(0,7);
+      if(!mo) return;
+      if(!map[mo]) map[mo] = {m:mo.slice(5),rev:0,cogs:0,opex:0,tx:0};
+      map[mo].rev += (t.total||0);
+      map[mo].cogs += (t.hpp||0);
+      map[mo].tx++;
+    });
+    (OPEX_DB||[]).forEach(e => {
+      const mo = (e.expense_date||e.tanggal||'').slice(0,7);
+      if(mo && map[mo]) map[mo].opex += parseFloat(e.amount||e.nominal||0);
+    });
+    return Object.keys(map).sort().map(m => map[m]);
+  };
+  const _monthly = _buildMonthly();
+  const d    = _monthly.length > 0 ? _monthly : BIZ_DATA.monthly;
+  const cur  = d[d.length-1]  || {m:'—',rev:0,cogs:0,opex:0,tx:0};
+  const prev = d[d.length-2]  || {m:'—',rev:0,cogs:0,opex:0,tx:0};
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayTx  = [...(SUPABASE_SALES_CACHE||[]),
+    ...(SESSION.transactions||[]).filter(t=>t.status==='paid')]
+    .filter(t => (t.createdAt||t.time||'').slice(0,10) === todayStr);
   const todayRev = todayTx.reduce((s,t) => s+(t.total||0), 0);
 
   // KPI row — dari data real SESSION + BIZ_DATA
@@ -12768,6 +12812,52 @@ function showDangerZone(){
       </div>
     </div>
   `;
+}
+
+/* ── Kategori Pengeluaran CRUD ── */
+async function loadKategoriPanel(){
+  const listEl = document.getElementById('kat-list');
+  if(!listEl) return;
+  listEl.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0">Memuat...</div>';
+  try {
+    const {data, error} = await supa.from('expense_categories').select('id,name').order('name');
+    if(error) throw error;
+    if(!data||!data.length){
+      listEl.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0">Belum ada kategori.</div>';
+      return;
+    }
+    listEl.innerHTML = data.map(cat => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px">${cat.name}</span>
+        <button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2);font-size:11px"
+          onclick="deleteKategori('${cat.id}','${cat.name.replace(/'/g,"\\'")}')">Hapus</button>
+      </div>`).join('');
+  } catch(e){ listEl.innerHTML = '<div style="color:var(--red);font-size:11px">Gagal load: '+e.message+'</div>'; }
+}
+
+async function addKategoriPengeluaran(){
+  const inp = document.getElementById('kat-new-name');
+  const name = inp?.value.trim();
+  if(!name){ showToast('error','Nama kategori wajib diisi'); return; }
+  try {
+    const {error} = await supa.from('expense_categories').insert({name});
+    if(error) throw error;
+    inp.value = '';
+    showToast('success','Kategori "'+name+'" ditambahkan');
+    logActivity('Settings','Tambah kategori pengeluaran: '+name);
+    await loadKategoriPanel();
+  } catch(e){ showToast('error','Gagal tambah: '+e.message); }
+}
+
+async function deleteKategori(id, name){
+  if(!confirm('Hapus kategori "'+name+'"? Pengeluaran yang sudah menggunakan kategori ini tidak akan terhapus.')) return;
+  try {
+    const {error} = await supa.from('expense_categories').delete().eq('id',id);
+    if(error) throw error;
+    showToast('success','Kategori "'+name+'" dihapus');
+    logActivity('Settings','Hapus kategori pengeluaran: '+name);
+    await loadKategoriPanel();
+  } catch(e){ showToast('error','Gagal hapus: '+e.message); }
 }
 
 function openResetSalesModal(){
