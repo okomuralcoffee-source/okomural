@@ -9871,7 +9871,7 @@ function submitRestock(){
     branchId: activeBranch?.id || 'CAB-001',
     nama: invItem.name,
     bahan: invItem.name,
-    bahanId, qty, amount: harga,
+    bahanId: bahanIdx, qty, amount: harga,
     hargaPerUnit: Math.round(harga / qty),
     supplier,
     kasir: currentUser.name,
