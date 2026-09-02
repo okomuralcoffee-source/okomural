@@ -3446,8 +3446,8 @@ async function hydrateUserFromSession(session) {
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div id="capex-util-pct" style="font-size:22px;font-weight:700">—%</div><div style="font-size:10px;color:var(--text3)">Utilized</div></div>
         </div>
         <div style="width:100%;display:flex;flex-direction:column;gap:8px">
-          <div class="line-item"><span class="lbl">Total CAPEX</span><span class="val" id="capex-util-total">—</span></div>
-          <div class="line-item"><span class="lbl">Diinvestasikan</span><span class="val" id="capex-util-spent">—</span></div>
+          <div class="line-item"><span class="lbl">Nilai Aset CAPEX</span><span class="val" id="capex-util-total">—</span></div>
+          <div class="line-item"><span class="lbl">Modal Disetor</span><span class="val" id="capex-util-capital" style="color:var(--blue)">—</span></div>
           <div class="line-item"><span class="lbl">Sisa Modal (estimasi)</span><span class="val" id="capex-util-remaining" style="color:var(--green)">—</span></div>
         </div>
       </div>
@@ -12491,16 +12491,17 @@ function renderCapexAdvisory(){
   const el = document.getElementById('capex-rec-list');
   if(!el) return;
   // Populate CAPEX Budget Utilization dari CAPEX_DB + capital_injections
-  const totalCapexVal  = CAPEX_DB.reduce((s,c)=>s+c.nilai,0);
-  const totalCapital   = (typeof CAPITAL_DB !== 'undefined')
-    ? CAPITAL_DB.reduce((s,c)=>s+(c.amount||c.nilai||0),0)
-    : 100000000; // fallback Rp 100jt jika belum load
+  const totalCapexVal  = CAPEX_DB.reduce((s,c)=>s+(c.nilai||0),0);
+  // Modal dari SUPABASE_SALES_CACHE equity atau fallback dari capital_injections
+  const totalCapital   = (typeof CAPITAL_DB !== 'undefined' && CAPITAL_DB.length > 0)
+    ? CAPITAL_DB.reduce((s,c)=>s+(parseFloat(c.amount||c.nilai||0)),0)
+    : 100000000;
   const utilPct = totalCapital > 0 ? Math.round(totalCapexVal/totalCapital*100) : 0;
   const remaining = Math.max(0, totalCapital - totalCapexVal);
   const setEl = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
   setEl('capex-util-pct', utilPct+'%');
-  setEl('capex-util-total', 'Rp '+totalCapital.toLocaleString('id'));
-  setEl('capex-util-spent', 'Rp '+totalCapexVal.toLocaleString('id'));
+  setEl('capex-util-total', 'Rp '+totalCapexVal.toLocaleString('id'));
+  setEl('capex-util-capital', 'Rp '+totalCapital.toLocaleString('id'));
   setEl('capex-util-remaining', 'Rp '+remaining.toLocaleString('id'));
 
   // Add Analyze button if not exists
