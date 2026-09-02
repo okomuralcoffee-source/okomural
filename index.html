@@ -5459,7 +5459,10 @@ function showModule(mod){
       renderExpensesModule();
     },
     'pricelist': renderPricelist,
-    'consignment': renderConsignment,
+    'consignment': async () => {
+      await loadConsignmentFromSupabase();
+      renderConsignment();
+    },
   };
   if(allRenders[mod]) setTimeout(allRenders[mod], 60);
 }
@@ -6745,10 +6748,34 @@ function openAddKonsinyasi(){
       const tanggal=document.getElementById('ks-tanggal').value;
       if(!produk||!mitra){showToast('error','Nama produk & mitra wajib diisi');return;}
       if(!qty||!harga){showToast('error','Jumlah & harga wajib diisi');return;}
-      KONSINYASI_DB.push({id:'KS-'+String(konsinyasiIdCounter++).padStart(3,'0'),produk,mitra,qty,harga,komisi,tanggal,terjual:0,status:'aktif'});
+      const ksNo = 'KS-'+String(konsinyasiIdCounter++).padStart(3,'0');
+      const newKs = {id:ksNo,produk,mitra,qty,harga,komisi,tanggal,terjual:0,status:'aktif'};
+      KONSINYASI_DB.push(newKs);
       saveKONSINYASI();
       renderConsignment();
       showToast('success','Titipan ditambahkan',produk+' · '+qty+' pcs dari '+mitra);
+      // Sync ke Supabase
+      (async()=>{
+        try {
+          const {data,error} = await supa.from('consignments').insert({
+            consignment_no: ksNo,
+            product_name:   produk,
+            partner_name:   mitra,
+            branch_id:      getBranchUUID(),
+            quantity:       qty,
+            sold_qty:       0,
+            price_per_unit: harga,
+            commission_pct: komisi,
+            start_date:     tanggal,
+            status:         'aktif',
+            created_by:     getStaffUUID()||null,
+          }).select('id').single();
+          if(error) throw error;
+          newKs.supaId = data.id;
+          saveKONSINYASI();
+          logActivity('Konsinyasi','Tambah: '+ksNo+' · '+produk+' dari '+mitra);
+        } catch(e){ console.warn('Konsinyasi save error:',e.message); }
+      })();
     }
   );
 }
@@ -6787,11 +6814,15 @@ function settleKonsinyasi(id){
 }
 function deleteKonsinyasi(id){
   openConfirm('Hapus Titipan?','Data konsinyasi ini akan dihapus.','Hapus',()=>{
+    const item = KONSINYASI_DB.find(x=>x.id===id);
     const idx=KONSINYASI_DB.findIndex(x=>x.id===id);
     if(idx>-1) KONSINYASI_DB.splice(idx,1);
     saveKONSINYASI();
     renderConsignment();
     showToast('info','Data konsinyasi dihapus');
+    if(item?.supaId) supa.from('consignments').delete().eq('id',item.supaId)
+      .then(({error})=>{ if(error) console.warn('Delete sync:',error.message); });
+    logActivity('Konsinyasi','Hapus: '+id);
   });
 }
 /* ══════════════════════════════════════════════════
@@ -13176,6 +13207,42 @@ async function manualSyncOfflineQueue(){
   if(btn){ btn.disabled=false; btn.textContent='↑ Sync Sekarang'; }
   document.getElementById('offline-queue-overlay').classList.remove('open');
   await showOfflineQueue();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONSIGNMENT — Load dari Supabase
+══════════════════════════════════════════════════════════════ */
+async function loadConsignmentFromSupabase(){
+  try {
+    const {data, error} = await supa
+      .from('consignments')
+      .select('*')
+      .order('created_at', {ascending: false});
+    if(error) throw error;
+    // Full replace KONSINYASI_DB
+    KONSINYASI_DB.length = 0;
+    konsinyasiIdCounter = 1;
+    (data||[]).forEach(row => {
+      const no = row.consignment_no || ('KS-'+String(konsinyasiIdCounter).padStart(3,'0'));
+      // Track counter
+      const num = parseInt((no.match(/\d+$/)||[0])[0])||0;
+      if(num >= konsinyasiIdCounter) konsinyasiIdCounter = num + 1;
+      KONSINYASI_DB.push({
+        id:      no,
+        supaId:  row.id,
+        produk:  row.product_name,
+        mitra:   row.partner_name,
+        qty:     row.quantity,
+        harga:   parseFloat(row.price_per_unit||0),
+        komisi:  parseFloat(row.commission_pct||0),
+        tanggal: row.start_date || row.created_at?.slice(0,10) || '',
+        terjual: row.sold_qty || 0,
+        status:  row.status || 'aktif',
+        notes:   row.notes || '',
+      });
+    });
+    saveKONSINYASI();
+  } catch(e){ console.warn('loadConsignmentFromSupabase error:',e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════
