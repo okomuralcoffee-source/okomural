@@ -11699,22 +11699,45 @@ function updatePOStatus(id, status){
   po.status = status;
   // If received, update INV stock
   if(status === 'diterima'){
-    po.items.forEach(item => {
+    po.items.forEach(async item => {
       // Konversi unit: kg→gr (×1000), liter→ml (×1000), lainnya tetap
       const multiplier = item.unit==='kg' ? 1000 : item.unit==='liter' ? 1000 : 1;
       const addQty = item.qty * multiplier;
       const storageUnit = item.unit==='kg' ? 'gr' : item.unit==='liter' ? 'ml' : item.unit;
+      // Update INV lokal
       let inv = INV.find(i => i.name.toLowerCase() === item.name.toLowerCase());
       if(inv){
-        // Bahan sudah ada — tambah qty
         inv.qty += addQty;
         inv.status = inv.qty<=0?'critical':inv.qty<=inv.min?'warning':'safe';
       } else {
-        // Bahan belum ada — auto-create entry baru
         INV.push({name: item.name, qty: addQty, unit: storageUnit, min: 0, status: 'safe'});
       }
+      // Sync ke Supabase inventory_stocks
+      try {
+        const mat = MATERIALS_DB.find(m => m.name.toLowerCase() === item.name.toLowerCase());
+        if(mat?.id){
+          const branchId = getBranchUUID();
+          // Cek apakah row sudah ada
+          const {data: existing} = await supa
+            .from('inventory_stocks')
+            .select('id, quantity')
+            .eq('material_id', mat.id)
+            .eq('branch_id', branchId)
+            .single();
+          if(existing){
+            await supa.from('inventory_stocks')
+              .update({ quantity: parseFloat(existing.quantity) + addQty, updated_at: new Date().toISOString() })
+              .eq('id', existing.id);
+          } else {
+            await supa.from('inventory_stocks').insert({
+              material_id: mat.id, branch_id: branchId,
+              quantity: addQty, unit: storageUnit, min_stock_alert: 0
+            });
+          }
+        }
+      } catch(e){ console.warn('Inventory sync error:', e.message); }
     });
-    saveSESSION(); // INV berubah, sync ke localStorage
+    saveSESSION(); // INV lokal juga diupdate, sync ke localStorage
     showToast('success', 'PO '+id+' '+labels[status], 'Stok bahan baku diperbarui');
   } else {
     showToast('info', 'PO '+id+' '+labels[status]);
