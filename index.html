@@ -5435,7 +5435,13 @@ function showModule(mod){
     'auto-backup':   loadBackupDashboard,
     'exec-summary':renderExecSummary,
     'health-score':renderHealthScore,
-    'pl-statement':renderPL,
+    'pl-statement': async () => {
+      await Promise.all([
+        loadSupabaseSalesForTracking(),
+        loadExpensesFromSupabase(),
+      ]);
+      renderPL();
+    },
     'shareholder':renderShareholder,
     'special-events':renderSpecialEvents,
     'payroll':renderPayrollTable,
@@ -6500,11 +6506,17 @@ function setPLFilter(el,year){
 }
 function renderPL(){
   const el=document.getElementById('pl-kpi-row'); if(!el)return;
-  // Gunakan SESSION real data + BELANJA_LOG
-  const paid      = SESSION.transactions.filter(t => t.status === 'paid');
-  const totalRev  = paid.reduce((s,t) => s+t.total, 0);
+  // Gunakan SUPABASE_SALES_CACHE (real data) + merge SESSION lokal
+  const sessionTx = (SESSION.transactions||[]).filter(t=>t.status==='paid');
+  const supaTxIds = new Set((SUPABASE_SALES_CACHE||[]).map(s=>s.supaId));
+  const sessionOnly = sessionTx.filter(t=>!t.supaId||!supaTxIds.has(t.supaId));
+  const paid      = [...(SUPABASE_SALES_CACHE||[]), ...sessionOnly];
+  const totalRev  = paid.reduce((s,t) => s+(t.total||0), 0);
   const totalCogs = paid.reduce((s,t) => s+(t.hpp||0), 0);
-  const totalOpex = BELANJA_LOG.reduce((s,l)=>s+(l.amount||0), 0); // expense + restock
+  // OPEX dari Supabase expenses via OPEX_DB (diisi oleh loadExpensesFromSupabase)
+  const totalOpex = (typeof OPEX_DB !== 'undefined' && OPEX_DB.length > 0)
+    ? OPEX_DB.reduce((s,e)=>s+(parseFloat(e.amount||e.nominal||0)), 0)
+    : BELANJA_LOG.reduce((s,l)=>s+(l.amount||0), 0); // fallback lokal
   const totalPayroll = KARYAWAN_DB.reduce((s,k)=>s+(k.gaji||0),0);
   // Fallback ke BIZ_DATA untuk bulan-bulan sebelumnya (seed)
   const histData  = BIZ_DATA.monthly.slice(0,-1); // exclude bulan ini
