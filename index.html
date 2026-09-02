@@ -11778,7 +11778,26 @@ function updatePOStatus(id, status){
       } catch(e){ console.warn('Inventory sync error:', e.message); }
     });
     saveSESSION(); // INV lokal juga diupdate, sync ke localStorage
-    showToast('success', 'PO '+id+' '+labels[status], 'Stok bahan baku diperbarui');
+    // INSERT ke expenses sebagai Belanja Harian / PO diterima
+    (async () => {
+      try {
+        const BELANJA_HARIAN_CAT_ID = '09ebd1b7-33c6-45e1-9aec-b6f9e920f674';
+        const totalPO = po.items ? po.items.reduce((s,i)=>s+(i.qty*(i.price||0)),0) : (po.total||0);
+        const itemNames = po.items ? po.items.map(i=>i.name+' +'+i.qty+' '+i.unit).join(', ') : '';
+        if(totalPO > 0){
+          await supa.from('expenses').insert({
+            category_id:  BELANJA_HARIAN_CAT_ID,
+            branch_id:    po.branchId || getBranchUUID(),
+            amount:       totalPO,
+            expense_date: new Date().toISOString().slice(0,10),
+            notes:        'PO Diterima: '+id+' · '+po.supplier+(itemNames?' · '+itemNames:''),
+            created_by:   getStaffUUID() || null,
+          });
+          logActivity('Purchase Order', 'Diterima: '+id+' · Rp '+totalPO.toLocaleString('id'));
+        }
+      } catch(e){ console.warn('PO expense sync error:', e.message); }
+    })();
+    showToast('success', 'PO '+id+' '+labels[status], 'Stok & pengeluaran diperbarui');
   } else {
     showToast('info', 'PO '+id+' '+labels[status]);
   }
