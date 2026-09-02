@@ -13593,35 +13593,21 @@ async function analyzeCapexWithAI(){
       branch_name: activeBranch?.nama || 'OKOMURAL',
     };
 
-    // Call Gemini API langsung dari frontend
-    const GEMINI_KEY = 'AIzaSyAQ.Ab8RN6K-VNcK0qzym2buGZISwu8NcI1Dh-S_QvPYZMZbCxWMjw';
-    const capexList = (payload.capex_data||[]).map(c=>
-      `- ${c.nama} (${c.kategori}): Rp ${Number(c.nilai).toLocaleString('id')}, dibeli ${c.tanggal}, umur pakai ${c.umur} tahun`
-    ).join('\n') || 'Belum ada data CAPEX';
-
-    const prompt = `Kamu adalah konsultan keuangan senior untuk OKOMURAL Coffee, bisnis kafe F&B di Indonesia.\n\nDATA BISNIS SAAT INI:\n- Nama Cabang: ${payload.branch_name||'OKOMURAL'}\n- Total Revenue (akumulasi): Rp ${Number(payload.revenue||0).toLocaleString('id')}\n- Total OPEX: Rp ${Number(payload.opex||0).toLocaleString('id')}\n- Jumlah Karyawan: ${payload.karyawan_count||0} orang\n- Bahan Baku Kritis (stok habis): ${payload.stok_kritis||0} item\n\nDATA CAPEX (Aset Tetap):\n${capexList}\n\nINSTRUKSI: Berikan TEPAT 4 rekomendasi actionable dalam Bahasa Indonesia. Format respons HARUS JSON array (tanpa markdown, langsung JSON):\n[{"priority":"high","title":"Judul singkat","desc":"Penjelasan 2-3 kalimat spesifik untuk OKOMURAL","action":"Langkah konkret minggu ini"}]\npriority: high/medium/low. Fokus: efisiensi biaya, perawatan aset, timing CAPEX, optimasi cashflow.`;
-
-    const MODELS = ['gemini-2.5-flash-preview-05-20','gemini-2.5-flash-preview','gemini-2.5-flash','gemini-1.5-flash'];
-    let recs = [];
-    let lastErr = '';
-    for(const model of MODELS){
-      try {
-        const gr = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-          { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:1024}}) }
-        );
-        if(gr.ok){
-          const gd = await gr.json();
-          const raw = gd?.candidates?.[0]?.content?.parts?.[0]?.text||'[]';
-          const m = raw.match(/\[[\s\S]*\]/);
-          recs = m ? JSON.parse(m[0]) : [];
-          break;
-        }
-        lastErr = model+': '+gr.status+' '+await gr.text();
-      } catch(ex){ lastErr = model+': '+ex.message; }
-    }
-    if(!recs.length) throw new Error('Semua model gagal. '+lastErr);
+    // Call via Edge Function (CSP requires server-side proxy)
+    const efRes = await fetch(SUPA_URL+'/functions/v1/capex-advisor', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer '+SUPA_KEY,
+        'apikey': SUPA_KEY,
+      },
+      body: JSON.stringify(payload)
+    });
+    const efText = await efRes.text();
+    let efData;
+    try { efData = JSON.parse(efText); } catch(e){ throw new Error('Parse error: '+efText.slice(0,200)); }
+    if(!efRes.ok || !efData?.success) throw new Error(efData?.error || 'HTTP '+efRes.status+': '+efText.slice(0,200));
+    const recs = efData.recommendations || [];
     if(!recs.length){
       resultsEl.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:12px">Tidak ada rekomendasi yang dihasilkan.</div>';
       return;
