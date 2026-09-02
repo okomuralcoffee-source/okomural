@@ -13594,15 +13594,21 @@ async function analyzeCapexWithAI(){
     };
 
     // Call via Edge Function (CSP requires server-side proxy)
-    const efRes = await fetch(SUPA_URL+'/functions/v1/capex-advisor', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer '+SUPA_KEY,
-        'apikey': SUPA_KEY,
-      },
-      body: JSON.stringify(payload)
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout
+    let efRes;
+    try {
+      efRes = await fetch(SUPA_URL+'/functions/v1/capex-advisor', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer '+SUPA_KEY,
+          'apikey': SUPA_KEY,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } finally { clearTimeout(timeout); }
     const efText = await efRes.text();
     let efData;
     try { efData = JSON.parse(efText); } catch(e){ throw new Error('Parse error: '+efText.slice(0,200)); }
