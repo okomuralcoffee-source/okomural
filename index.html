@@ -2813,6 +2813,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'payment')">Metode Bayar</div>
       <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
+      <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
       <div id="settings-cabang">
@@ -3123,6 +3124,28 @@ async function hydrateUserFromSession(session) {
           <div style="text-align:center;padding:32px;color:var(--text3);font-size:12px">Belum ada kupon. Klik "🎟 Buat Kupon" untuk membuat.</div>
         </div>
       </div>
+
+        <!-- DANGER ZONE PANEL -->
+        <div id="settings-danger" style="display:none">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--red)">⚠ Danger Zone</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:20px">Aksi di bawah ini bersifat permanen dan tidak bisa dibatalkan. Lakukan dengan hati-hati.</div>
+
+          <div style="border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:16px;background:var(--red-dim,rgba(239,68,68,.08))">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px">Reset Data Penjualan</div>
+                <div style="font-size:11px;color:var(--text2);line-height:1.6;max-width:400px">
+                  Hapus semua data transaksi (<code>sales</code> + <code>sale_items</code>). Data lain seperti produk, stok, karyawan, dan CAPEX tidak terpengaruh.<br>
+                  <b>Gunakan sebelum operasional pertama dimulai.</b>
+                </div>
+              </div>
+              <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none;flex-shrink:0;margin-top:4px" onclick="openResetSalesModal()">
+                🗑 Reset Data Penjualan
+              </button>
+            </div>
+          </div>
+        </div>
+
     </div>
   </div>
 </div>
@@ -12119,6 +12142,58 @@ async function deleteCapitalInjection(id){
 
 
 /* ══════════════════════════════════════════════════════════════
+   DANGER ZONE — RESET DATA PENJUALAN
+   Hapus sales + sale_items, semua tabel lain aman
+══════════════════════════════════════════════════════════════ */
+function openResetSalesModal(){
+  // Only Owner
+  if(currentUser?.role !== 'Owner'){
+    showToast('error','Hanya Owner yang dapat melakukan reset data');
+    return;
+  }
+  document.getElementById('reset-sales-confirm-input').value = '';
+  const btn = document.getElementById('btn-confirm-reset-sales');
+  btn.disabled = true;
+  btn.style.opacity = '.4';
+  btn.style.cursor  = 'not-allowed';
+  document.getElementById('reset-sales-overlay').classList.add('open');
+}
+
+function checkResetSalesInput(){
+  const val = document.getElementById('reset-sales-confirm-input').value;
+  const btn = document.getElementById('btn-confirm-reset-sales');
+  const match = val === 'HAPUS PENJUALAN';
+  btn.disabled       = !match;
+  btn.style.opacity  = match ? '1' : '.4';
+  btn.style.cursor   = match ? 'pointer' : 'not-allowed';
+}
+
+async function confirmResetSales(){
+  const btn = document.getElementById('btn-confirm-reset-sales');
+  btn.textContent = 'Menghapus...';
+  btn.disabled = true;
+  try {
+    // Hapus sale_items dulu (FK constraint)
+    const {error: e1} = await supa.from('sale_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if(e1) throw e1;
+    // Hapus sales
+    const {error: e2} = await supa.from('sales').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if(e2) throw e2;
+    // Clear SESSION lokal juga
+    SESSION.transactions = [];
+    saveSESSION();
+    SUPABASE_SALES_CACHE = [];
+    document.getElementById('reset-sales-overlay').classList.remove('open');
+    showToast('success', '✅ Semua data penjualan berhasil dihapus. Aplikasi siap digunakan.');
+    logActivity('Danger Zone', 'Reset semua data penjualan (sales + sale_items)');
+  } catch(e){
+    showToast('error', 'Gagal reset: ' + e.message);
+    btn.textContent = 'Ya, Hapus Semua Penjualan';
+    btn.disabled = false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    INPUT TRANSAKSI MANUAL — Sales Tracking
    Insert ke Supabase sales + sale_items tanpa stock deduction
 ══════════════════════════════════════════════════════════════ */
@@ -15040,6 +15115,37 @@ document.addEventListener('DOMContentLoaded', () => {
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost" onclick="document.getElementById('manual-sales-overlay').classList.remove('open')">Batal</button>
       <button class="btn btn-primary" onclick="saveManualSales()">Simpan Transaksi</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESET SALES MODAL -->
+<div class="confirm-overlay" id="reset-sales-overlay">
+  <div class="confirm-box" style="max-width:420px">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:32px;margin-bottom:8px">⚠️</div>
+      <h4 style="color:var(--red);margin:0 0 6px">Reset Data Penjualan</h4>
+      <p style="font-size:12px;color:var(--text2);margin:0;line-height:1.6">
+        Aksi ini akan <b>menghapus permanen</b> seluruh data transaksi dari Supabase.<br>
+        Data produk, stok, karyawan, dan keuangan lain <b>tidak terpengaruh</b>.
+      </p>
+    </div>
+    <div style="background:var(--red-dim,rgba(239,68,68,.08));border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:12px;margin-bottom:16px;font-size:11px;color:var(--text2)">
+      Yang akan dihapus:<br>
+      • Semua record di tabel <code>sales</code><br>
+      • Semua record di tabel <code>sale_items</code>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:6px">
+        Ketik <b style="color:var(--red)">HAPUS PENJUALAN</b> untuk konfirmasi:
+      </label>
+      <input type="text" id="reset-sales-confirm-input" class="form-input" placeholder="HAPUS PENJUALAN" autocomplete="off" oninput="checkResetSalesInput()">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('reset-sales-overlay').classList.remove('open')">Batal</button>
+      <button class="btn btn-sm" id="btn-confirm-reset-sales" style="background:var(--red);color:#fff;border:none;opacity:.4;cursor:not-allowed" disabled onclick="confirmResetSales()">
+        Ya, Hapus Semua Penjualan
+      </button>
     </div>
   </div>
 </div>
