@@ -9744,7 +9744,11 @@ function renderBelanjaBody(){
       ${renderBelanjaLog('expense')}
     `;
   } else {
-    // Restock tab
+    // Restock tab — ensure INV is loaded from Supabase
+    if(INV.length === 0 && typeof loadInventoryFromSupabase === 'function'){
+      loadInventoryFromSupabase().then(() => renderBelanjaBody());
+      return;
+    }
     const invOptions = INV.map((i,idx) =>
       `<option value="${idx}">${i.name} (${i.unit}) — Stok: ${i.qty}</option>`
     ).join('');
