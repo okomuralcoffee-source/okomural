@@ -3415,16 +3415,75 @@ async function hydrateUserFromSession(session) {
   <div class="adv-page-hd">
     <div class="adv-page-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
     <div><div class="adv-page-title">Shareholder Equity</div><div class="adv-page-sub">Ownership structure and profit distribution</div></div>
-    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openGModal('Tambah Pemegang Saham','<div class=\'gfield\'><label>Nama</label><input type=\'text\' placeholder=\'Nama investor/pemilik...\'></div><div class=\'gfield-row\'><div class=\'gfield\'><label>Kepemilikan (%)</label><input type=\'number\' placeholder=\'0\'></div><div class=\'gfield\'><label>Modal Disetor (Rp)</label><input type=\'number\' placeholder=\'0\'></div></div>','Tambah',()=>showToast('success','Pemegang saham ditambahkan'))">+ Tambah Pemegang</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openShareholderModal()">+ Tambah Pemegang</button>
   </div>
   <div class="adv-kpi-row" id="sh-kpi-row"></div>
   <div class="adv-card" style="margin-top:14px">
     <div class="adv-card-hd">Shareholder Breakdown</div>
     <div class="equity-formula-wrap" id="sh-equity-formula" style="margin-bottom:14px"></div>
-  <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Pemegang Saham</div>
-  <div id="sh-table"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Pemegang Saham</div>
+    <div id="sh-table"></div>
+  </div>
+  <div class="adv-card" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="adv-card-hd" style="margin:0">Riwayat Capital Injection</div>
+      <button class="btn btn-ghost btn-sm" onclick="openCapitalInjectionModal()">+ Inject Modal</button>
+    </div>
+    <div id="sh-injection-table"></div>
   </div>
 </div>
+
+<!-- SHAREHOLDER MODAL -->
+<div class="confirm-overlay" id="shareholder-modal-overlay">
+  <div class="confirm-box" style="max-width:420px">
+    <h4 id="sh-modal-title">Tambah Pemegang Saham</h4>
+    <input type="hidden" id="sh-modal-id">
+    <div class="gfield" style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Nama Pemegang</label>
+      <input type="text" id="sh-modal-name" class="form-input" placeholder="Nama investor / pemilik...">
+    </div>
+    <div class="gfield" style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Kepemilikan (%)</label>
+      <input type="number" id="sh-modal-pct" class="form-input" placeholder="0" min="0" max="100" step="0.01">
+    </div>
+    <div class="gfield" style="margin-bottom:16px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Catatan</label>
+      <input type="text" id="sh-modal-notes" class="form-input" placeholder="Opsional...">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('shareholder-modal-overlay').classList.remove('open')">Batal</button>
+      <button class="btn btn-primary" onclick="saveShareholderModal()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- CAPITAL INJECTION MODAL -->
+<div class="confirm-overlay" id="capital-injection-modal-overlay">
+  <div class="confirm-box" style="max-width:420px">
+    <h4>Tambah Capital Injection</h4>
+    <div class="gfield" style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Pemegang Saham</label>
+      <select id="ci-modal-sh" class="form-input"></select>
+    </div>
+    <div class="gfield" style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Jumlah (Rp)</label>
+      <input type="number" id="ci-modal-amount" class="form-input" placeholder="0" min="1">
+    </div>
+    <div class="gfield" style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Tanggal</label>
+      <input type="date" id="ci-modal-date" class="form-input">
+    </div>
+    <div class="gfield" style="margin-bottom:16px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Catatan</label>
+      <input type="text" id="ci-modal-notes" class="form-input" placeholder="Opsional...">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('capital-injection-modal-overlay').classList.remove('open')">Batal</button>
+      <button class="btn btn-primary" onclick="saveCapitalInjectionModal()">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- P&L STATEMENT -->
 <div class="module" id="module-pl-statement">
   <div class="adv-page-hd">
@@ -4710,7 +4769,7 @@ function showScreen(id){
   ['checkout-modal','qris-overlay','confirm-overlay',
    'modifier-overlay','bulk-modal-overlay','belanja-overlay','wizard-overlay',
    'split-overlay','tx-history-overlay','ob-panel-overlay','ob-modal-overlay',
-   'gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay'
+   'gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay','shareholder-modal-overlay','capital-injection-modal-overlay'
   ].forEach(oid=>{
     const el=document.getElementById(oid);
     if(el) el.classList.remove('open');
@@ -11857,56 +11916,198 @@ function deleteCapital(id){
    Modal = Capital Injection - Total CAPEX - Expenses + Net Profit
 ══════════════════════════════════════════════════ */
 function renderShareholder(){
-  const cur = BIZ_DATA.monthly[BIZ_DATA.monthly.length-1];
-  const netProfit  = cur.rev - cur.cogs - cur.opex;
-  const totalCap   = CAPITAL_DB.reduce((s,c)=>s+c.jumlah, 0);
-  const totalCapex = CAPEX_DB.reduce((s,c)=>s+c.nilai, 0);
-  const totalExp   = BIZ_DATA.monthly.reduce((s,m)=>s+m.opex, 0);
-  const equity     = totalCap - totalCapex + netProfit * 8; // 8 bulan YTD
-  // KPI
-  const el = document.getElementById('sh-kpi-row');
-  if(el) el.innerHTML =
-    kpiHTML(ICON_DOLLAR,'Total Equity',rp(equity),'Modal bersih estimasi',equity>0?1:-1,'') +
-    kpiHTML(ICON_DOLLAR,'Capital Injected',rp(totalCap),'Total modal disetor',1,'') +
-    kpiHTML(ICON_TREND,'Net Profit YTD',rpM(netProfit*8),'Estimasi 8 bulan',1,'') +
-    kpiHTML(ICON_OPEX,'Total CAPEX',rp(totalCapex),'Aset tetap',0,'');
-  // Equity formula
-  const formulaEl = document.getElementById('sh-equity-formula');
-  if(formulaEl){
-    formulaEl.innerHTML = `
-      <div class="equity-formula-row positive"><span>Modal Disetor (Capital Injection)</span><span class="val">+ ${rp(totalCap)}</span></div>
-      <div class="equity-formula-row positive"><span>Net Profit YTD (estimasi 8 bulan)</span><span class="val">+ ${rpM(netProfit*8)}</span></div>
-      <div class="equity-formula-row negative"><span>Total CAPEX (aset tetap)</span><span class="val">− ${rp(totalCapex)}</span></div>
-      <div class="equity-formula-row negative"><span>Total OPEX YTD</span><span class="val">− ${rpM(totalExp)}</span></div>
-      <div class="equity-formula-row ${equity>0?'positive':'negative'}"><span>= Estimasi Equity Bersih</span><span class="val">${rp(equity)}</span></div>
-    `;
-  }
-  // Shareholders table
-  const sh = BIZ_DATA.shareholders || [];
-  const tbl = document.getElementById('sh-table');
-  if(tbl && sh.length){
-    tbl.innerHTML = `
-      <div class="sh-table-head"><span>Pemegang</span><span>Kepemilikan</span><span>Nilai Equity</span><span>Net Profit Share</span></div>
-      ${sh.map(s=>{
-        const profShare = netProfit * 8 * (s.own/100);
-        const equityShare = equity * (s.own/100);
-        return `<div class="sh-table-row">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text2)">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-            <span style="font-weight:500;font-size:13px">${s.name}</span>
-          </div>
-          <span style="font-weight:700">${s.own}%</span>
-          <span style="color:var(--green);font-weight:600">${rp(equityShare)}</span>
-          <span style="color:var(--blue)">${rp(profShare)}</span>
-        </div>`;
-      }).join('')}
-    `;
+  loadShareholdersFromSupabase();
+}
+
+/* ── SHAREHOLDER EQUITY — SUPABASE CRUD ── */
+let SHAREHOLDERS_DB = [];
+let INJECTIONS_DB   = [];
+
+async function loadShareholdersFromSupabase(){
+  try {
+    const [shRes, ciRes] = await Promise.all([
+      supa.from('shareholders').select('*').eq('is_active',true).order('created_at'),
+      supa.from('capital_injections').select('*, shareholders(name)').order('injection_date', {ascending:false})
+    ]);
+    if(shRes.error) throw shRes.error;
+    if(ciRes.error) throw ciRes.error;
+    SHAREHOLDERS_DB = shRes.data || [];
+    INJECTIONS_DB   = ciRes.data || [];
+    renderShareholderUI();
+  } catch(e){
+    showToast('error','Gagal load data shareholder: '+e.message);
   }
 }
-/* ══════════════════════════════════════════════════
-   EXEC SUMMARY HTML PATCHES
-   Add missing DOM elements
-══════════════════════════════════════════════════ */
+
+function renderShareholderUI(){
+  // ── KPI ──
+  const totalCap   = INJECTIONS_DB.reduce((s,c)=>s+parseFloat(c.amount||0),0);
+  const totalCapex = CAPEX_DB.reduce((s,c)=>s+c.nilai,0);
+  const cur        = BIZ_DATA.monthly[BIZ_DATA.monthly.length-1];
+  const netProfit  = (cur.rev - cur.cogs - cur.opex) * 8;
+  const totalOpex  = BIZ_DATA.monthly.reduce((s,m)=>s+m.opex,0);
+  const equity     = totalCap - totalCapex + netProfit - totalOpex;
+
+  const kpiEl = document.getElementById('sh-kpi-row');
+  if(kpiEl) kpiEl.innerHTML =
+    kpiHTML(ICON_DOLLAR,'Total Equity',rp(equity),'Modal bersih estimasi',equity>0?1:-1,'') +
+    kpiHTML(ICON_DOLLAR,'Capital Injected',rp(totalCap),'Total modal disetor',1,'') +
+    kpiHTML(ICON_TREND,'Net Profit YTD',rpM(netProfit),'Estimasi 8 bulan',1,'') +
+    kpiHTML(ICON_OPEX,'Total CAPEX',rp(totalCapex),'Aset tetap',0,'');
+
+  // ── Formula ──
+  const formulaEl = document.getElementById('sh-equity-formula');
+  if(formulaEl) formulaEl.innerHTML = `
+    <div class="equity-formula-row positive"><span>Modal Disetor (Capital Injection)</span><span class="val">+ ${rp(totalCap)}</span></div>
+    <div class="equity-formula-row positive"><span>Net Profit YTD (estimasi 8 bulan)</span><span class="val">+ ${rpM(netProfit)}</span></div>
+    <div class="equity-formula-row negative"><span>Total CAPEX (aset tetap)</span><span class="val">− ${rp(totalCapex)}</span></div>
+    <div class="equity-formula-row negative"><span>Total OPEX YTD</span><span class="val">− ${rpM(totalOpex)}</span></div>
+    <div class="equity-formula-row ${equity>=0?'positive':'negative'}"><span><b>= Estimasi Equity Bersih</b></span><span class="val"><b>${rp(equity)}</b></span></div>`;
+
+  // ── Shareholders table ──
+  const tbl = document.getElementById('sh-table');
+  if(tbl){
+    if(!SHAREHOLDERS_DB.length){
+      tbl.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">Belum ada pemegang saham.</div>';
+    } else {
+      tbl.innerHTML = `
+        <div class="sh-table-head"><span>Pemegang</span><span>Kepemilikan</span><span>Nilai Equity</span><span>Net Profit Share</span><span></span></div>
+        ${SHAREHOLDERS_DB.map(s=>{
+          const pct = parseFloat(s.ownership_pct)/100;
+          const eqShare = equity * pct;
+          const npShare = netProfit * pct;
+          const init = s.name.split(' ').map(w=>w[0]).slice(0,2).join('');
+          return `<div class="sh-table-row">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text2)">${init}</div>
+              <div>
+                <div style="font-size:13px;font-weight:600">${s.name}</div>
+                ${s.notes?`<div style="font-size:11px;color:var(--text3)">${s.notes}</div>`:''}
+              </div>
+            </div>
+            <span style="font-weight:700">${parseFloat(s.ownership_pct).toFixed(1)}%</span>
+            <span style="color:var(--green);font-weight:600">${rp(eqShare)}</span>
+            <span style="color:var(--blue,#3B82F6)">${rp(npShare)}</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="openShareholderModal('${s.id}','${s.name.replace(/'/g,"\\'")}',${s.ownership_pct},'${(s.notes||'').replace(/'/g,"\\'")}')">Edit</button>
+              <button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteShareholder('${s.id}','${s.name.replace(/'/g,"\\'")}')">Hapus</button>
+            </div>
+          </div>`;
+        }).join('')}`;
+    }
+  }
+
+  // ── Capital Injection table ──
+  const itbl = document.getElementById('sh-injection-table');
+  if(itbl){
+    if(!INJECTIONS_DB.length){
+      itbl.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">Belum ada riwayat injeksi modal.</div>';
+    } else {
+      itbl.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:6px 8px;font-weight:600">Pemegang</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:600">Tanggal</th>
+            <th style="text-align:right;padding:6px 8px;font-weight:600">Jumlah</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:600">Catatan</th>
+            <th style="padding:6px 8px"></th>
+          </tr></thead>
+          <tbody>${INJECTIONS_DB.map(ci=>`<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px">${ci.shareholders?.name||'—'}</td>
+            <td style="padding:8px;color:var(--text2)">${ci.injection_date||'—'}</td>
+            <td style="padding:8px;text-align:right;color:var(--green);font-weight:600">+ ${rp(parseFloat(ci.amount))}</td>
+            <td style="padding:8px;color:var(--text3)">${ci.notes||'—'}</td>
+            <td style="padding:8px;text-align:right">
+              <button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteCapitalInjection('${ci.id}')">Hapus</button>
+            </td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+    }
+  }
+}
+
+function openShareholderModal(id='',name='',pct='',notes=''){
+  document.getElementById('sh-modal-id').value   = id;
+  document.getElementById('sh-modal-name').value  = name;
+  document.getElementById('sh-modal-pct').value   = pct;
+  document.getElementById('sh-modal-notes').value = notes;
+  document.getElementById('sh-modal-title').textContent = id ? 'Edit Pemegang Saham' : 'Tambah Pemegang Saham';
+  document.getElementById('shareholder-modal-overlay').classList.add('open');
+}
+
+async function saveShareholderModal(){
+  const id    = document.getElementById('sh-modal-id').value.trim();
+  const name  = document.getElementById('sh-modal-name').value.trim();
+  const pct   = parseFloat(document.getElementById('sh-modal-pct').value);
+  const notes = document.getElementById('sh-modal-notes').value.trim();
+  if(!name){ showToast('error','Nama wajib diisi'); return; }
+  if(!pct || pct<=0 || pct>100){ showToast('error','Kepemilikan harus 1–100%'); return; }
+  try {
+    const payload = { name, ownership_pct: pct, notes: notes||null };
+    const { error } = id
+      ? await supa.from('shareholders').update(payload).eq('id',id)
+      : await supa.from('shareholders').insert(payload);
+    if(error) throw error;
+    document.getElementById('shareholder-modal-overlay').classList.remove('open');
+    showToast('success', id ? 'Data pemegang diperbarui' : 'Pemegang saham ditambahkan');
+    logActivity('Shareholder', (id?'Edit':'Tambah')+': '+name);
+    await loadShareholdersFromSupabase();
+  } catch(e){ showToast('error','Gagal simpan: '+e.message); }
+}
+
+async function deleteShareholder(id, name){
+  if(!confirm('Hapus pemegang saham "'+name+'"? Semua riwayat capital injection akan ikut terhapus.')) return;
+  try {
+    const { error } = await supa.from('shareholders').update({is_active:false}).eq('id',id);
+    if(error) throw error;
+    showToast('success', name+' dihapus');
+    logActivity('Shareholder','Hapus: '+name);
+    await loadShareholdersFromSupabase();
+  } catch(e){ showToast('error','Gagal hapus: '+e.message); }
+}
+
+function openCapitalInjectionModal(){
+  const sel = document.getElementById('ci-modal-sh');
+  if(!sel) return;
+  sel.innerHTML = SHAREHOLDERS_DB.map(s=>`<option value="${s.id}">${s.name} (${s.ownership_pct}%)</option>`).join('');
+  document.getElementById('ci-modal-amount').value = '';
+  document.getElementById('ci-modal-date').value   = new Date().toISOString().slice(0,10);
+  document.getElementById('ci-modal-notes').value  = '';
+  document.getElementById('capital-injection-modal-overlay').classList.add('open');
+}
+
+async function saveCapitalInjectionModal(){
+  const shId   = document.getElementById('ci-modal-sh').value;
+  const amount = parseFloat(document.getElementById('ci-modal-amount').value);
+  const date   = document.getElementById('ci-modal-date').value;
+  const notes  = document.getElementById('ci-modal-notes').value.trim();
+  if(!shId){ showToast('error','Pilih pemegang saham'); return; }
+  if(!amount || amount<=0){ showToast('error','Jumlah harus lebih dari 0'); return; }
+  if(!date){ showToast('error','Tanggal wajib diisi'); return; }
+  try {
+    const { error } = await supa.from('capital_injections').insert({
+      shareholder_id: shId, amount, injection_date: date, notes: notes||null
+    });
+    if(error) throw error;
+    document.getElementById('capital-injection-modal-overlay').classList.remove('open');
+    const shName = SHAREHOLDERS_DB.find(s=>s.id===shId)?.name||'';
+    showToast('success','Capital injection Rp '+amount.toLocaleString('id')+' ditambahkan');
+    logActivity('Capital Injection','Tambah: '+shName+' Rp '+amount.toLocaleString('id'));
+    await loadShareholdersFromSupabase();
+  } catch(e){ showToast('error','Gagal simpan: '+e.message); }
+}
+
+async function deleteCapitalInjection(id){
+  if(!confirm('Hapus riwayat capital injection ini?')) return;
+  try {
+    const { error } = await supa.from('capital_injections').delete().eq('id',id);
+    if(error) throw error;
+    showToast('success','Injection dihapus');
+    await loadShareholdersFromSupabase();
+  } catch(e){ showToast('error','Gagal hapus: '+e.message); }
+}
+
+
 function ensureExecSummaryDOMs(){
   // If exec-alerts div doesn't exist, we render without it
   // Already handled via getElementById null check
