@@ -5444,7 +5444,13 @@ function showModule(mod){
     },
     'shareholder':renderShareholder,
     'special-events':renderSpecialEvents,
-    'payroll':renderPayrollTable,
+    'payroll': async () => {
+      await Promise.all([
+        loadKaryawanFromSupabase(),
+        loadAttendanceForPayroll(),
+      ]);
+      renderPayrollTable();
+    },
     'capex-advisory':renderCapexAdvisory,
     'capex-logs':renderCapexLogs,
     'capital-injection':renderCapitalInjection,
@@ -13170,6 +13176,78 @@ async function manualSyncOfflineQueue(){
   if(btn){ btn.disabled=false; btn.textContent='↑ Sync Sekarang'; }
   document.getElementById('offline-queue-overlay').classList.remove('open');
   await showOfflineQueue();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PAYROLL — Load dari Supabase attendance_logs + hr_employees
+══════════════════════════════════════════════════════════════ */
+async function loadAttendanceForPayroll(){
+  try {
+    const monthEl = document.getElementById('payroll-month');
+    const yearEl  = document.getElementById('payroll-year');
+    const month   = monthEl?.value || String(new Date().getMonth()+1).padStart(2,'0');
+    const year    = yearEl?.value  || String(new Date().getFullYear());
+    const period  = year + '-' + String(month).padStart(2,'0');
+    const dateFrom = period + '-01T00:00:00Z';
+    // End of month
+    const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const dateTo   = period + '-' + String(lastDay).padStart(2,'0') + 'T23:59:59Z';
+
+    const {data, error} = await supa
+      .from('attendance_logs')
+      .select('id, employee_id, type, timestamp, notes')
+      .gte('timestamp', dateFrom)
+      .lte('timestamp', dateTo)
+      .order('timestamp', {ascending: true});
+    if(error) throw error;
+
+    // Build ATTENDANCE_DB[empId][period] = {hadir, izin, alpha, totalJam}
+    // Group clock_in/clock_out pairs to calculate jam kerja
+    const grouped = {}; // empId → [{in, out}]
+    const byEmp   = {}; // empId → logs[]
+
+    (data||[]).forEach(row => {
+      if(!byEmp[row.employee_id]) byEmp[row.employee_id] = [];
+      byEmp[row.employee_id].push(row);
+    });
+
+    Object.entries(byEmp).forEach(([empId, logs]) => {
+      if(!ATTENDANCE_DB[empId]) ATTENDANCE_DB[empId] = {};
+      let hadir=0, izin=0, alpha=0, totalJam=0;
+      let lastIn = null;
+
+      logs.forEach(log => {
+        if(log.type === 'clock_in'){
+          lastIn = new Date(log.timestamp);
+          hadir++;
+        } else if(log.type === 'clock_out' && lastIn){
+          const jam = (new Date(log.timestamp) - lastIn) / 3600000;
+          totalJam += jam;
+          lastIn = null;
+        } else if(log.type === 'manual'){
+          const notes = (log.notes||'').toLowerCase();
+          if(notes.includes('izin')) izin++;
+          else if(notes.includes('alpha') || notes.includes('tidak hadir')) alpha++;
+          else hadir++;
+        }
+      });
+
+      ATTENDANCE_DB[empId][period] = {
+        hadir:    Math.max(hadir, 1), // minimal 1 kalau ada log
+        izin,
+        alpha,
+        totalJam: Math.round(totalJam * 10) / 10,
+      };
+    });
+
+    // Employees with no attendance → default 0
+    KARYAWAN_DB.forEach(k => {
+      if(!ATTENDANCE_DB[k.id]) ATTENDANCE_DB[k.id] = {};
+      if(!ATTENDANCE_DB[k.id][period])
+        ATTENDANCE_DB[k.id][period] = {hadir:0, izin:0, alpha:0, totalJam:0};
+    });
+
+  } catch(e){ console.warn('loadAttendanceForPayroll error:', e.message); }
 }
 
 function ensureExecSummaryDOMs(){
