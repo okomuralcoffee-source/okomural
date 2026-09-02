@@ -6877,14 +6877,19 @@ function renderIngRows(ingredients){
   }
   container.innerHTML=ingredients.map((ing,idx)=>{
     const hpp=ing.qty*(1+ing.waste_pct/100)*ing.cost_per_unit;
-    const matOpts=getMaterialOptions().map(m=>`<option value="${m.name}"${m.name===ing.material?' selected':''}>${m.name}</option>`).join('')+'<option value="__custom__">+ Lainnya...</option>';
+    const matOpts=getMaterialOptions().map(m=>`<option value="${m.name}"${m.name===ing.material?' selected':''}>${m.name}</option>`).join('')+'<option value="__custom__">+ Custom (ketik manual)</option>';
     const unitOpts=UNIT_OPTIONS.map(u=>`<option value="${u}"${u===ing.unit?' selected':''}>${u}</option>`).join('');
     return `<div class="bom-ing-row" id="ing-row-${idx}">
-      <div><select onchange="updateIngredient(${idx},'material',this.value)">${matOpts}<option value="__custom__">+ Lainnya...</option></select></div>
+      <div><select onchange="updateIngredient(${idx},'material',this.value)">${matOpts}</select></div>
       <div><input type="number" value="${ing.qty}" min="0" step="0.5" onchange="updateIngredient(${idx},'qty',+this.value);recalcBOM()"></div>
       <div><select onchange="updateIngredient(${idx},'unit',this.value)">${unitOpts}</select></div>
       <div><input type="number" value="${ing.waste_pct}" min="0" max="50" step="1" onchange="updateIngredient(${idx},'waste_pct',+this.value);recalcBOM()" placeholder="0"></div>
-      <div><input type="number" value="${ing.cost_per_unit}" min="0" step="0.5" onchange="updateIngredient(${idx},'cost_per_unit',+this.value);recalcBOM()"></div>
+      <div style="position:relative">
+        <input type="number" value="${ing.cost_per_unit}" min="0" step="0.5" 
+          onchange="updateIngredient(${idx},'cost_per_unit',+this.value);recalcBOM()"
+          title="Auto-fill dari data Bahan Baku. Bisa diubah manual."
+          style="${ing.cost_per_unit>0?'border-color:var(--green-dim)':''}">
+      </div>
       <div class="hpp-cell" id="ing-hpp-${idx}">Rp ${Math.round(hpp).toLocaleString('id')}</div>
       <div><input type="text" value="${ing.notes}" placeholder="Catatan..." onchange="updateIngredient(${idx},'notes',this.value)"></div>
       <button class="bom-del-btn" onclick="removeIngredient(${idx})" title="Hapus">×</button>
@@ -6898,7 +6903,7 @@ function updateIngredient(idx,field,value){
   // Auto-fill unit & cost_per_unit saat material dipilih dari dropdown
   if(field==='material'){
     const mat=getMaterialOptions().find(m=>m.name===value);
-    if(mat){if(!ing.unit||ing.unit==='gr')ing.unit=mat.unit;if(!ing.cost_per_unit||ing.cost_per_unit===0)ing.cost_per_unit=mat.cost;}
+    if(mat){ ing.unit=mat.unit; ing.cost_per_unit=mat.cost; } // always auto-fill dari MATERIALS_DB
     renderIngRows(BOM_DATA[currentBOMProductId].ingredients);recalcBOM();
   }
 }
