@@ -5154,6 +5154,8 @@ function goToLauncher(){
   loadProductsFromSupabase();
   // Pre-load karyawan dari Supabase untuk Quick Attendance + HR module
   loadKaryawanFromSupabase();
+  // Pre-load materials agar BOM editor dropdown terisi dari Supabase
+  loadMaterialsFromSupabase();
   // Restore shift aktif dari Supabase (cross-device)
   setTimeout(loadActiveShiftFromSupabase, 1500);
   // Phase 9: init realtime subscriptions
@@ -6652,6 +6654,8 @@ async function openBOMEditor(productId){
     <div class="bp-emoji">${item.emoji}</div>
     <div><div class="bp-name">${item.name}</div><div class="bp-cat">${catMap[item.cat]||item.cat}</div></div>
     <div class="bp-price"><div class="bp-price-lbl">Harga Jual</div><div class="bp-price-val">Rp ${item.price.toLocaleString('id')}</div></div>`;
+  // Pastikan MATERIALS_DB terisi sebelum render dropdown
+  if(MATERIALS_DB.length === 0) await loadMaterialsFromSupabase();
   // Load BOM dari Supabase jika produk punya supaId
   if(item.supaId) await loadBOMFromSupabase(productId, item.supaId);
   const bom=BOM_DATA[productId]||{yield:1,yield_unit:'cup',prep_time:3,notes:'',ingredients:[]};
