@@ -2434,6 +2434,11 @@ async function hydrateUserFromSession(session) {
         <span class="topbar-title" id="topbar-title">Keuangan</span>
       </div>
       <div class="topbar-right">
+        <!-- Offline Queue Badge -->
+        <div id="offline-queue-badge" onclick="showOfflineQueue()" title="Transaksi offline pending" style="display:none;position:relative;width:32px;height:32px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:8px;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"><path d="M1 6l11 6 11-6"/><path d="M1 12l11 6 11-6"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="1" y1="6" x2="1" y2="18"/><line x1="23" y1="6" x2="23" y2="18"/></svg>
+          <span id="offline-queue-count" style="position:absolute;top:-5px;right:-5px;background:var(--amber);color:#000;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
+        </div>
         <div id="stock-alert-bell" class="stock-alert-bell" onclick="showStockAlerts()" style="display:none">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
           <span id="stock-alert-count" class="stock-alert-count">0</span>
@@ -2441,6 +2446,10 @@ async function hydrateUserFromSession(session) {
         
         <div class="theme-toggle" onclick="toggleTheme()" title="Ganti tema"></div>
       </div>
+    </div>
+    <!-- Offline Status Banner -->
+    <div id="offline-banner" style="display:none;background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.3);padding:6px 16px;font-size:11px;font-weight:600;color:var(--amber);text-align:center">
+      📡 Offline — Transaksi akan disimpan lokal dan disync otomatis saat online kembali
     </div>
     <div class="page-body">
 <!-- INVENTORY -->
@@ -5267,6 +5276,9 @@ function goToLauncher(){
   loadMaterialsFromSupabase();
   // Init tombol Input Manual sesuai role
   setTimeout(initManualSalesButton, 500);
+  // Init offline detection + IndexedDB + badge
+  initOfflineDetection();
+  updateOfflineBadge();
   // Restore shift aktif dari Supabase (cross-device)
   setTimeout(loadActiveShiftFromSupabase, 1500);
   // Phase 9: init realtime subscriptions
@@ -8300,8 +8312,8 @@ async function confirmCheckout(){
   // ── SUPABASE: RPC atomic_checkout ────────────────────────────────────────
   let supaTransactionId = null;
   // ── SUPABASE Phase 2: atomic_checkout via RPC ───────────────────────────
-  const hasSupaSession = !!(currentUser?.supaAuthId && activeShift?.supaId);
-  console.log('[Phase2] hasSupaSession:', hasSupaSession,
+  const hasSupaSession = !!(currentUser?.supaAuthId && activeShift?.supaId) && navigator.onLine;
+  console.log('[Phase2] hasSupaSession:', hasSupaSession, '| online:', navigator.onLine,
     '| supaAuthId:', currentUser?.supaAuthId?.slice(0,8) || 'null',
     '| shift.supaId:', activeShift?.supaId?.slice(0,8) || 'null');
   if(hasSupaSession) {
@@ -8345,6 +8357,15 @@ async function confirmCheckout(){
       supaTransactionId = saleId;
     } catch(e) {
       console.warn('Supabase atomic_checkout error (fallback lokal):', e);
+      // Jika offline → simpan ke IndexedDB
+      if(!navigator.onLine){
+        saveCheckoutOffline({
+          total: finalTotal, subtotal: cartTotal,
+          discount: totalDiscount, method,
+        }, cart).then(localId => {
+          showToast('warning', '📡 Tersimpan offline — ' + localId);
+        });
+      }
       // Lanjut dengan local mode — tidak interrupt kasir
     }
   }
@@ -12349,7 +12370,7 @@ function openResetSalesModal(){
   btn.disabled = true;
   btn.style.opacity = '.4';
   btn.style.cursor  = 'not-allowed';
-  document.getElementById('reset-sales-overlay').classList.add('open');
+  document.getElementById('reset-sales-overlay','offline-queue-overlay').classList.add('open');
 }
 
 function checkResetSalesInput(){
@@ -12588,6 +12609,258 @@ async function loadSupabaseSalesForTracking(){
       isSupabase: true,
     }));
   } catch(e){ console.warn('loadSupabaseSalesForTracking error:', e); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   OFFLINE-FIRST + AUTO SYNC
+   IndexedDB → queue pending transactions → flush when online
+══════════════════════════════════════════════════════════════ */
+
+// ── IndexedDB Setup ──────────────────────────────────────────
+const IDB_NAME    = 'okomural_offline';
+const IDB_VERSION = 1;
+const IDB_STORE   = 'pending_sales';
+let   _idb        = null;
+
+function openIDB(){
+  return new Promise((resolve, reject) => {
+    if(_idb){ resolve(_idb); return; }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)){
+        const store = db.createObjectStore(IDB_STORE, {keyPath:'localId'});
+        store.createIndex('status', 'status', {unique:false});
+      }
+    };
+    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function idbAdd(record){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror    = e => reject(e.target.error);
+  });
+}
+
+async function idbGetAll(statusFilter=null){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const req   = statusFilter
+      ? store.index('status').getAll(statusFilter)
+      : store.getAll();
+    req.onsuccess = e => resolve(e.target.result || []);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function idbUpdate(localId, updates){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const getReq = store.get(localId);
+    getReq.onsuccess = e => {
+      const rec = {...e.target.result, ...updates};
+      store.put(rec);
+      tx.oncomplete = resolve;
+    };
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+async function idbDelete(localId){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(localId);
+    tx.oncomplete = resolve;
+    tx.onerror    = e => reject(e.target.error);
+  });
+}
+
+// ── Offline Detection ─────────────────────────────────────────
+function initOfflineDetection(){
+  updateOfflineUI();
+  window.addEventListener('online',  handleOnline);
+  window.addEventListener('offline', handleOffline);
+}
+
+function updateOfflineUI(){
+  const banner = document.getElementById('offline-banner');
+  if(banner) banner.style.display = navigator.onLine ? 'none' : 'block';
+}
+
+function handleOffline(){
+  updateOfflineUI();
+  showToast('warning', '📡 Offline — Transaksi tetap bisa dilakukan');
+}
+
+async function handleOnline(){
+  updateOfflineUI();
+  showToast('info', '🌐 Online kembali — Mensync transaksi...');
+  await autoSyncOfflineQueue();
+}
+
+// ── Queue UI ──────────────────────────────────────────────────
+async function updateOfflineBadge(){
+  try {
+    const pending = await idbGetAll('pending');
+    const badge   = document.getElementById('offline-queue-badge');
+    const count   = document.getElementById('offline-queue-count');
+    if(!badge) return;
+    if(pending.length > 0){
+      badge.style.display = 'flex';
+      if(count) count.textContent = pending.length;
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e){ console.warn('updateOfflineBadge error:', e); }
+}
+
+async function showOfflineQueue(){
+  const list = document.getElementById('offline-queue-list');
+  if(!list) return;
+  const pending = await idbGetAll();
+  if(!pending.length){
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Tidak ada transaksi offline pending ✓</div>';
+  } else {
+    list.innerHTML = pending.map(tx => {
+      const statusColor = {pending:'var(--amber)', synced:'var(--green)', failed:'var(--red)'}[tx.status] || 'var(--text2)';
+      const statusLabel = {pending:'Menunggu sync', synced:'Berhasil sync', failed:'Gagal sync'}[tx.status] || tx.status;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid var(--border);font-size:12px">
+        <div>
+          <div style="font-weight:600">${tx.localId}</div>
+          <div style="color:var(--text2);font-size:11px">${new Date(tx.createdAt).toLocaleString('id')} · ${tx.method?.toUpperCase()||'CASH'} · ${(tx.items||[]).length} item</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-weight:700;color:var(--green)">Rp ${(tx.total||0).toLocaleString('id')}</span>
+          <span style="font-size:10px;font-weight:700;color:${statusColor}">${statusLabel}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('offline-queue-overlay').classList.add('open');
+}
+
+// ── Save to IndexedDB (offline checkout) ─────────────────────
+async function saveCheckoutOffline(txData, cartItems){
+  const localId = 'OFL-' + Date.now();
+  const record = {
+    localId,
+    status:    'pending',
+    createdAt: new Date().toISOString(),
+    branchId:  getBranchUUID(),
+    staffId:   getStaffUUID(),
+    shiftId:   activeShift?.supaId || null,
+    memberId:  activeMember?.id || null,
+    total:     txData.total,
+    subtotal:  txData.subtotal,
+    discount:  txData.discount,
+    method:    txData.method,
+    notes:     'Offline transaction',
+    items:     cartItems.map(c => ({
+      productId:   MENU.find(m=>m.id===c.id)?.supaId || null,
+      localProductId: c.id,
+      productName: c.name,
+      quantity:    c.qty,
+      unitPrice:   c.price,
+      hppPerUnit:  calcHPP(c.id) || 0,
+    })),
+    retryCount: 0,
+  };
+  await idbAdd(record);
+  await updateOfflineBadge();
+  return localId;
+}
+
+// ── Auto Sync ─────────────────────────────────────────────────
+async function autoSyncOfflineQueue(){
+  if(!navigator.onLine) return;
+  const pending = await idbGetAll('pending');
+  if(!pending.length){ await updateOfflineBadge(); return; }
+
+  let synced = 0, failed = 0;
+  for(const tx of pending){
+    try {
+      // Sync ke Supabase: insert sales + sale_items
+      const {data: saleData, error: saleErr} = await supa
+        .from('sales')
+        .insert({
+          branch_id:      tx.branchId,
+          staff_id:       tx.staffId,
+          shift_id:       tx.shiftId,
+          member_id:      tx.memberId || null,
+          total_amount:   tx.total,
+          discount_amount: tx.discount || 0,
+          payment_method: tx.method || 'cash',
+          payment_status: 'paid',
+          notes:          tx.notes || 'Offline transaction',
+          created_at:     tx.createdAt,
+        })
+        .select('id').single();
+
+      if(saleErr) throw saleErr;
+
+      // Insert sale_items
+      if(tx.items?.length){
+        const {error: itemErr} = await supa.from('sale_items').insert(
+          tx.items.map(i => ({
+            sale_id:      saleData.id,
+            product_id:   i.productId || null,
+            product_name: i.productName,
+            quantity:     i.quantity,
+            unit_price:   i.unitPrice,
+            subtotal:     i.unitPrice * i.quantity,
+            hpp_per_unit: i.hppPerUnit || 0,
+            local_product_id: i.localProductId,
+          }))
+        );
+        if(itemErr) console.warn('sale_items sync warn:', itemErr.message);
+      }
+
+      await idbDelete(tx.localId);
+      synced++;
+    } catch(e){
+      console.warn('Sync failed for', tx.localId, e.message);
+      const retries = (tx.retryCount || 0) + 1;
+      await idbUpdate(tx.localId, {
+        status:     retries >= 3 ? 'failed' : 'pending',
+        retryCount: retries,
+        lastError:  e.message,
+      });
+      failed++;
+    }
+  }
+
+  await updateOfflineBadge();
+  if(synced > 0)  showToast('success', `✅ ${synced} transaksi offline berhasil disync`);
+  if(failed > 0)  showToast('error',   `⚠ ${failed} transaksi gagal sync — cek Offline Queue`);
+
+  // Refresh sales tracking if open
+  if(isModActive('sales-tracking') && typeof loadSupabaseSalesForTracking === 'function'){
+    await loadSupabaseSalesForTracking();
+    renderSalesTracking();
+  }
+  if(isModActive('live-dashboard') && typeof renderLiveDashboard === 'function'){
+    renderLiveDashboard().catch(()=>{});
+  }
+}
+
+async function manualSyncOfflineQueue(){
+  const btn = document.getElementById('btn-manual-sync');
+  if(btn){ btn.disabled=true; btn.textContent='Mensync...'; }
+  await autoSyncOfflineQueue();
+  if(btn){ btn.disabled=false; btn.textContent='↑ Sync Sekarang'; }
+  document.getElementById('offline-queue-overlay').classList.remove('open');
+  await showOfflineQueue();
 }
 
 function ensureExecSummaryDOMs(){
@@ -15339,6 +15612,21 @@ document.addEventListener('DOMContentLoaded', () => {
       <button class="btn btn-sm" id="btn-confirm-reset-sales" style="background:var(--red);color:#fff;border:none;opacity:.4;cursor:not-allowed" disabled onclick="confirmResetSales()">
         Ya, Hapus Semua Penjualan
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- OFFLINE QUEUE MODAL -->
+<div class="confirm-overlay" id="offline-queue-overlay">
+  <div class="confirm-box" style="max-width:520px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h4 style="margin:0;color:var(--amber)">📡 Transaksi Offline Pending</h4>
+      <button onclick="document.getElementById('offline-queue-overlay').classList.remove('open')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px">×</button>
+    </div>
+    <div id="offline-queue-list"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-ghost" onclick="document.getElementById('offline-queue-overlay').classList.remove('open')">Tutup</button>
+      <button class="btn btn-primary" onclick="manualSyncOfflineQueue()" id="btn-manual-sync">↑ Sync Sekarang</button>
     </div>
   </div>
 </div>
