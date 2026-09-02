@@ -3212,28 +3212,28 @@ async function hydrateUserFromSession(session) {
   <!-- TAB: GLOBAL -->
   <div id="ld-panel-global">
     <div class="adv-kpi-row" id="ld-kpi-row"></div>
-    <div class="adv-two-col">
-      <div class="adv-card">
-        <div class="adv-card-hd" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Tren Revenue Bulanan (Rp Juta)</span>
-          <div style="display:flex;gap:10px;font-size:10px;color:var(--text3)">
-            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:2px;background:var(--text);display:inline-block;border-radius:1px"></span>Revenue</span>
-            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:2px;background:var(--green);display:inline-block;border-radius:1px"></span>Profit</span>
-          </div>
-        </div>
-        <canvas id="ld-revenue-chart" height="140" style="max-width:100%"></canvas>
-      </div>
-      <div class="adv-card"><div id="ld-unit-dist"></div></div>
-    </div>
     <div class="adv-two-col" style="margin-top:12px">
       <div class="adv-card">
-        <div class="adv-card-hd">🧪 Status Stok Bahan Baku</div>
-        <div id="ld-stock-alerts" style="margin-top:4px"></div>
+        <div class="adv-card-hd">🔄 Shift Aktif</div>
+        <div id="ld-shift-status" style="margin-top:4px"></div>
       </div>
       <div class="adv-card">
-        <div class="adv-card-hd">💳 Breakdown Metode Pembayaran</div>
-        <div id="ld-pay-breakdown" style="margin-top:8px"></div>
+        <div class="adv-card-hd">🧪 Status Stok Kritis</div>
+        <div id="ld-stock-alerts" style="margin-top:4px"></div>
       </div>
+    </div>
+    <div class="adv-card" style="margin-top:12px">
+      <div class="adv-card-hd">🧾 Transaksi Terakhir Hari Ini</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:8px">
+        <thead><tr style="font-size:10px;color:var(--text3);border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:4px 8px;font-weight:600">WAKTU</th>
+          <th style="text-align:left;padding:4px 8px;font-weight:600">KASIR</th>
+          <th style="text-align:left;padding:4px 8px;font-weight:600">CABANG</th>
+          <th style="text-align:left;padding:4px 8px;font-weight:600">METODE</th>
+          <th style="text-align:right;padding:4px 8px;font-weight:600">TOTAL</th>
+        </tr></thead>
+        <tbody id="ld-tx-tbody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -3597,6 +3597,12 @@ async function hydrateUserFromSession(session) {
     <div class="st-kpi"><div class="st-kpi-label">Jumlah Transaksi</div><div class="st-kpi-val" id="sk-count">—</div><div class="st-kpi-sub" id="sk-count-sub"></div></div>
     <div class="st-kpi"><div class="st-kpi-label">Rata-rata / Transaksi</div><div class="st-kpi-val" id="sk-avg">—</div><div class="st-kpi-sub" id="sk-avg-sub"></div></div>
     <div class="st-kpi"><div class="st-kpi-label">Total Diskon</div><div class="st-kpi-val" id="sk-disc" style="color:var(--amber)">—</div><div class="st-kpi-sub" id="sk-disc-sub"></div></div>
+  </div>
+  <!-- Tren Harian -->
+  <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📈 Tren Penjualan Harian</div>
+    <canvas id="st-trend-chart" height="100" style="max-width:100%"></canvas>
+    <div id="st-trend-empty" style="display:none;text-align:center;padding:24px;font-size:12px;color:var(--text3)">Belum ada data untuk periode ini</div>
   </div>
   <!-- Top products + payment breakdown -->
   <div class="st-top-grid" id="st-top-grid">
@@ -6248,19 +6254,60 @@ async function renderLiveDashboard(){
       <div class="ld-kpi-value" style="color:${k.color}">${k.value}</div>
     </div>`).join('');
 
+  // Shift status per cabang
+  const shiftEl = document.getElementById('ld-shift-status');
+  if(shiftEl){
+    try {
+      const {data:shifts} = await supa
+        .from('pos_shifts')
+        .select('id, status, opened_at, branch_id, employees!pos_shifts_employee_id_fkey(name)')
+        .eq('status','open')
+        .order('opened_at', {ascending:false});
+      const branchMap = {
+        '11111111-1111-1111-1111-111111111001':'HQ Indrapura',
+        '11111111-1111-1111-1111-111111111002':'Cart #1 Sukamulya',
+        '11111111-1111-1111-1111-111111111003':'Cart #2 Petapahan'
+      };
+      if(!shifts||!shifts.length){
+        shiftEl.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">Tidak ada shift aktif</div>';
+      } else {
+        shiftEl.innerHTML = shifts.map(s=>{
+          const dur = Math.floor((Date.now()-new Date(s.opened_at))/60000);
+          const h = Math.floor(dur/60), m = dur%60;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-size:12px;font-weight:600">${branchMap[s.branch_id]||'—'}</div>
+              <div style="font-size:11px;color:var(--text3)">${s.employees?.name||'—'}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:10px;font-weight:700;color:var(--green)">● AKTIF</div>
+              <div style="font-size:10px;color:var(--text3)">${h>0?h+'j ':''} ${m}m</div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    } catch(e){ console.warn('shift status error',e); }
+  }
+
   // Recent transaksi global
   const tbody = document.getElementById('ld-tx-tbody');
   if(tbody){
     tbody.innerHTML = allTx.length === 0
       ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada transaksi hari ini</td></tr>'
-      : allTx.slice(0,20).map(t => {
+      : allTx.slice(0,5).map(t => {
           const kasir = t.employees?.name || '—';
-          return `<tr>
-            <td style="font-size:11px;color:var(--text3)">${new Date(t.created_at).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'})}</td>
-            <td style="font-weight:600">Rp ${parseFloat(t.total_amount||0).toLocaleString('id')}</td>
-            <td><span class="badge badge-gray" style="font-size:10px">${(t.payment_method||'cash').toUpperCase()}</span></td>
-            <td style="font-size:11px;color:var(--text3)">${kasir}</td>
-            <td><span class="badge badge-green" style="font-size:10px">Paid</span></td>
+          const branchName = {
+            '11111111-1111-1111-1111-111111111001':'HQ',
+            '11111111-1111-1111-1111-111111111002':'Sukamulya',
+            '11111111-1111-1111-1111-111111111003':'Petapahan'
+          }[t.branch_id] || '—';
+          const methColor = {cash:'var(--green)',qris:'var(--amber)',card:'var(--blue)'}[t.payment_method]||'var(--text2)';
+          return `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:7px 8px;font-size:11px;color:var(--text3)">${new Date(t.created_at).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'})}</td>
+            <td style="padding:7px 8px;font-size:12px">${kasir}</td>
+            <td style="padding:7px 8px;font-size:11px;color:var(--text3)">${branchName}</td>
+            <td style="padding:7px 8px"><span style="font-size:10px;font-weight:700;color:${methColor}">${(t.payment_method||'cash').toUpperCase()}</span></td>
+            <td style="padding:7px 8px;text-align:right;font-weight:700;color:var(--green)">Rp ${parseFloat(t.total_amount||0).toLocaleString('id')}</td>
           </tr>`;
         }).join('');
   }
@@ -11402,7 +11449,99 @@ function renderSalesTracking(){
       }).join('');
     }
   }
+
+  // ── Tren Harian Chart ──
+  renderSalesTrendChart(txList);
 }
+
+function renderSalesTrendChart(txList){
+  const canvas = document.getElementById('st-trend-chart');
+  const emptyEl = document.getElementById('st-trend-empty');
+  if(!canvas) return;
+
+  // Group by date
+  const byDate = {};
+  txList.forEach(t => {
+    const d = (t.createdAt||t.time||'').slice(0,10);
+    if(d) byDate[d] = (byDate[d]||0) + (t.total||0);
+  });
+  const dates = Object.keys(byDate).sort();
+
+  if(!dates.length){
+    canvas.style.display='none';
+    if(emptyEl) emptyEl.style.display='';
+    return;
+  }
+  canvas.style.display='';
+  if(emptyEl) emptyEl.style.display='none';
+
+  const vals = dates.map(d=>byDate[d]);
+  const maxVal = Math.max(...vals) || 1;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 600;
+  const H = 100;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0,0,W,H);
+
+  const pad = {l:40, r:12, t:10, b:24};
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+  const step = dates.length > 1 ? cw/(dates.length-1) : cw;
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,.06)';
+  ctx.lineWidth = 1;
+  [0,.5,1].forEach(r => {
+    const y = pad.t + ch*(1-r);
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.3)';
+    ctx.font='9px Inter,sans-serif';
+    ctx.textAlign='right';
+    ctx.fillText('Rp '+(maxVal*r/1000).toFixed(0)+'k', pad.l-4, y+3);
+  });
+
+  const pts = vals.map((v,i)=>({
+    x: pad.l + (dates.length>1 ? i*step : cw/2),
+    y: pad.t + ch*(1 - v/maxVal)
+  }));
+
+  // Area fill
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pad.t+ch);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x, pad.t+ch);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0,pad.t,0,pad.t+ch);
+  grad.addColorStop(0,'rgba(29,158,117,.35)');
+  grad.addColorStop(1,'rgba(29,158,117,.02)');
+  ctx.fillStyle=grad; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle='#1D9E75'; ctx.lineWidth=2; ctx.stroke();
+
+  // Dots
+  pts.forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,3,0,Math.PI*2);
+    ctx.fillStyle='#1D9E75'; ctx.fill();
+    ctx.strokeStyle='var(--bg1)'; ctx.lineWidth=1.5; ctx.stroke();
+  });
+
+  // X labels (max 7)
+  ctx.fillStyle='rgba(255,255,255,.4)';
+  ctx.font='9px Inter,sans-serif'; ctx.textAlign='center';
+  const step2 = Math.max(1, Math.ceil(dates.length/7));
+  dates.forEach((d,i)=>{
+    if(i%step2===0 || i===dates.length-1){
+      const p = pts[i];
+      const lbl = d.slice(5); // MM-DD
+      ctx.fillText(lbl, p.x, H-6);
+    }
+  });
+}
+
 function exportSalesCSV(){
   const txList = getSalesFiltered();
   if(!txList.length){ showToast('warning','Tidak ada data','Filter menghasilkan 0 transaksi'); return; }
