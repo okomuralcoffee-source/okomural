@@ -2813,7 +2813,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'payment')">Metode Bayar</div>
       <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
-      <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
+      <div class="s-item" onclick="switchSettings(this,'danger');showDangerZone()" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
       <div id="settings-cabang">
@@ -12312,6 +12312,32 @@ async function deleteCapitalInjection(id){
    DANGER ZONE — RESET DATA PENJUALAN
    Hapus sales + sale_items, semua tabel lain aman
 ══════════════════════════════════════════════════════════════ */
+function showDangerZone(){
+  const el = document.getElementById('settings-danger');
+  if(!el) return;
+  el.style.display = 'block';
+  if(el.innerHTML.trim()) return; // already rendered
+  el.innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--red)">⚠ Danger Zone</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:20px">Aksi di bawah ini bersifat permanen dan tidak bisa dibatalkan. Lakukan dengan hati-hati.</div>
+    <div style="border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:16px;background:rgba(239,68,68,.08)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px">Reset Data Penjualan</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6;max-width:400px">
+            Hapus semua data transaksi (<code>sales</code> + <code>sale_items</code>).
+            Data lain seperti produk, stok, karyawan, dan CAPEX tidak terpengaruh.<br>
+            <b>Gunakan sebelum operasional pertama dimulai.</b>
+          </div>
+        </div>
+        <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none;flex-shrink:0;margin-top:4px" onclick="openResetSalesModal()">
+          🗑 Reset Data Penjualan
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 function openResetSalesModal(){
   // Only Owner
   if(currentUser?.role !== 'Owner'){
