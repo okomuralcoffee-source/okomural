@@ -9906,8 +9906,8 @@ function submitRestock(){
         branch_id:    getBranchUUID(),
         amount:       harga,
         expense_date: new Date().toISOString().slice(0,10),
-        notes:        'Restock ' + invItem.name + ' +' + qty + ' ' + invItem.unit + (supplier ? ' · ' + supplier : ''),
-        created_by:   getStaffUUID() || null,
+        description:  'Restock ' + invItem.name + ' +' + qty + ' ' + invItem.unit + (supplier ? ' · ' + supplier : ''),
+        recorded_by:  getStaffUUID() || null,
       });
       logActivity('Belanja Harian', invItem.name + ' +' + qty + ' ' + invItem.unit + ' · Rp ' + harga.toLocaleString('id'));
     } catch(e){
@@ -11795,8 +11795,8 @@ function updatePOStatus(id, status){
             branch_id:    po.branchId || getBranchUUID(),
             amount:       totalPO,
             expense_date: new Date().toISOString().slice(0,10),
-            notes:        'PO Diterima: '+id+' · '+po.supplier+(itemNames?' · '+itemNames:''),
-            created_by:   getStaffUUID() || null,
+            description:  'PO Diterima: '+id+' · '+po.supplier+(itemNames?' · '+itemNames:''),
+            recorded_by:  getStaffUUID() || null,
           });
           logActivity('Purchase Order', 'Diterima: '+id+' · Rp '+totalPO.toLocaleString('id'));
         }
