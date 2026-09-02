@@ -12399,6 +12399,12 @@ async function confirmResetSales(){
     SUPABASE_SALES_CACHE = [];
     document.getElementById('reset-sales-overlay').classList.remove('open');
     showToast('success', '✅ Semua data penjualan berhasil dihapus. Aplikasi siap digunakan.');
+    // Refresh Live Dashboard & Sales Tracking agar KPI langsung 0
+    if(typeof renderLiveDashboard === 'function') renderLiveDashboard().catch(()=>{});
+    if(isModActive('sales-tracking') && typeof renderSalesTracking === 'function'){
+      await loadSupabaseSalesForTracking();
+      renderSalesTracking();
+    }
     logActivity('Danger Zone', 'Reset semua data penjualan (sales + sale_items)');
   } catch(e){
     showToast('error', 'Gagal reset: ' + e.message);
