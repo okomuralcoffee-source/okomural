@@ -11719,9 +11719,50 @@ function updatePOStatus(id, status){
   } else {
     showToast('info', 'PO '+id+' '+labels[status]);
   }
-  lsSavePO(); // persist status PO ke localStorage
+  lsSavePO();
+  // Sync status ke Supabase
+  const _poSync = PO_DB.find(p=>p.id===id);
+  if(_poSync?.supaId){
+    const updateData = {status};
+    if(status==='terkirim') updateData.sent_at = new Date().toISOString();
+    if(status==='diterima') updateData.received_at = new Date().toISOString();
+    supa.from('purchase_orders').update(updateData).eq('id', _poSync.supaId)
+      .then(({error}) => { if(error) console.warn('PO status sync error:', error.message); });
+  }
   renderPOList();
 }
+/* ── PO Load from Supabase ── */
+async function loadPOFromSupabase(){
+  try {
+    const {data, error} = await supa
+      .from('purchase_orders')
+      .select('*, purchase_order_items(id, item_name, quantity, unit, unit_price, subtotal, notes, material_id)')
+      .order('created_at', {ascending: false});
+    if(error) throw error;
+    // Merge Supabase data into PO_DB (replace all)
+    PO_DB = (data||[]).map(po => ({
+      id:           po.po_number || ('PO-'+po.id.slice(-6).toUpperCase()),
+      supaId:       po.id,
+      supplier:     po.supplier_name || '—',
+      date:         po.order_date || po.created_at?.slice(0,10) || '',
+      deliveryDate: po.delivery_date || '',
+      notes:        po.notes || '',
+      status:       po.status || 'draft',
+      total:        parseFloat(po.total_amount || 0),
+      items:        (po.purchase_order_items||[]).map(i=>({
+        name:  i.item_name || '—',
+        qty:   parseFloat(i.quantity || 0),
+        unit:  i.unit || 'kg',
+        price: parseFloat(i.unit_price || 0),
+        notes: i.notes || '',
+      })),
+    }));
+    renderPOList();
+  } catch(e){
+    showToast('error','Gagal load PO: '+e.message);
+  }
+}
+
 /* ── PO Modal ── */
 function openPOModal(){
   poItems = [{name:'', qty:1, unit:'kg', price:0}];
@@ -11782,26 +11823,67 @@ function updatePOPreview(){
   const el = document.getElementById('po-total-preview');
   if(el) el.textContent = 'Rp '+Math.round(total).toLocaleString('id');
 }
-function savePO(status){
+async function savePO(status){
   const supplier = document.getElementById('po-supplier')?.value;
   if(!supplier){ showToast('error','Supplier wajib dipilih'); return; }
   const validItems = poItems.filter(i=>i.name&&i.qty>0);
   if(!validItems.length){ showToast('error','Tambahkan minimal 1 item'); return; }
   const now = new Date();
-  const newPO = {
-    id: 'PO-'+String(poIdCounter++).padStart(3,'0'),
-    supplier,
-    date: now.toISOString().slice(0,10),
-    deliveryDate: document.getElementById('po-delivery-date')?.value || '',
-    notes: document.getElementById('po-notes')?.value.trim() || '',
-    status,
-    items: validItems,
-  };
-  PO_DB.push(newPO);
-  lsSavePO(); // persist ke localStorage
-  closePOModal();
-  renderPOList();
-  showToast('success', status==='terkirim'?'PO dikirim ke supplier':'PO disimpan sebagai draft', newPO.id+' · '+supplier);
+  const poNumber = 'PO-'+String(Date.now()).slice(-6);
+  const deliveryDate = document.getElementById('po-delivery-date')?.value || null;
+  const notes = document.getElementById('po-notes')?.value.trim() || '';
+  const totalAmount = validItems.reduce((s,i)=>s+(i.qty*i.price),0);
+  const supplierObj = SUPPLIERS_DB.find(s=>s.name===supplier);
+  try {
+    // INSERT purchase_orders
+    const {data: poData, error: poErr} = await supa
+      .from('purchase_orders')
+      .insert({
+        po_number:     poNumber,
+        supplier_id:   supplierObj?.id || null,
+        supplier_name: supplier,
+        branch_id:     getBranchUUID() || null,
+        status,
+        order_date:    now.toISOString().slice(0,10),
+        delivery_date: deliveryDate || null,
+        notes,
+        total_amount:  totalAmount,
+        created_by:    getStaffUUID() || null,
+      })
+      .select('id').single();
+    if(poErr) throw poErr;
+    // INSERT purchase_order_items
+    const itemsPayload = validItems.map(i => {
+      const mat = MATERIALS_DB.find(m=>m.name===i.name);
+      return {
+        po_id:       poData.id,
+        material_id: mat?.id || null,
+        item_name:   i.name,
+        quantity:    i.qty,
+        unit:        i.unit || 'kg',
+        unit_price:  i.price || 0,
+        subtotal:    i.qty * (i.price||0),
+        notes:       i.notes || null,
+      };
+    });
+    const {error: itemErr} = await supa.from('purchase_order_items').insert(itemsPayload);
+    if(itemErr) console.warn('PO items insert warn:', itemErr.message);
+    // Update local PO_DB
+    const newPO = {
+      id: poNumber, supaId: poData.id, supplier,
+      date: now.toISOString().slice(0,10),
+      deliveryDate: deliveryDate || '',
+      notes, status, items: validItems,
+    };
+    PO_DB.push(newPO);
+    lsSavePO();
+    closePOModal();
+    renderPOList();
+    logActivity('Purchase Order', status==='terkirim'?'PO Terkirim: ':'PO Draft: '+poNumber+' · '+supplier);
+    showToast('success', status==='terkirim'?'PO dikirim ke supplier':'PO disimpan sebagai draft', poNumber+' · '+supplier);
+  } catch(e){
+    showToast('error', 'Gagal simpan PO: '+e.message);
+  }
 }
 /* ── Hook showModule ── */
 const _showModSalesPO = showModule;
@@ -11811,7 +11893,7 @@ showModule = function(mod){
     // auto-load handled by allRenders above
   }
   if(mod === 'purchase-orders'){
-    renderPOList();
+    loadPOFromSupabase();
   }
 };
 /* ══════════════════════════════════════════════════
