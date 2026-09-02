@@ -3547,7 +3547,10 @@ async function hydrateUserFromSession(session) {
 <div class="module" id="module-sales-tracking">
   <div class="page-header">
     <div class="page-header-left"><h2>Sales Tracking & Laporan</h2><p>Analisis penjualan per periode</p></div>
-    <button class="btn btn-secondary btn-sm" onclick="exportSalesCSV()">↓ Export CSV</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="openManualSalesModal()" id="btn-manual-sales" data-roles="Owner,Manajer" style="display:none">+ Input Manual</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportSalesCSV()">↓ Export CSV</button>
+    </div>
   </div>
   <!-- Filters -->
   <div class="st-filter-row">
@@ -4769,7 +4772,7 @@ function showScreen(id){
   ['checkout-modal','qris-overlay','confirm-overlay',
    'modifier-overlay','bulk-modal-overlay','belanja-overlay','wizard-overlay',
    'split-overlay','tx-history-overlay','ob-panel-overlay','ob-modal-overlay',
-   'gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay','shareholder-modal-overlay','capital-injection-modal-overlay'
+   'gmodal-overlay','product-modifier-overlay','stock-alert-overlay','crm-detail-overlay','shareholder-modal-overlay','capital-injection-modal-overlay','manual-sales-overlay'
   ].forEach(oid=>{
     const el=document.getElementById(oid);
     if(el) el.classList.remove('open');
@@ -5233,6 +5236,8 @@ function goToLauncher(){
   loadKaryawanFromSupabase();
   // Pre-load materials agar BOM editor dropdown terisi dari Supabase
   loadMaterialsFromSupabase();
+  // Init tombol Input Manual sesuai role
+  setTimeout(initManualSalesButton, 500);
   // Restore shift aktif dari Supabase (cross-device)
   setTimeout(loadActiveShiftFromSupabase, 1500);
   // Phase 9: init realtime subscriptions
@@ -11216,14 +11221,19 @@ function setSalesDateRange(range){
     from.value = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
     to.value   = fmt(now);
   }
-  renderSalesTracking();
+  // Load dari Supabase dulu, baru render
+  loadSupabaseSalesForTracking().then(()=>renderSalesTracking());
 }
 function getSalesFiltered(){
   const fromVal = document.getElementById('st-date-from')?.value;
   const toVal   = document.getElementById('st-date-to')?.value;
   const method  = document.getElementById('st-method-filter')?.value || 'all';
-  // Hanya transaksi paid (exclude void)
-  let txList = (SESSION.transactions || []).filter(t => t.status === 'paid');
+  // Merge SESSION (hari ini) + SUPABASE_SALES_CACHE (historis/manual)
+  const sessionTx = (SESSION.transactions || []).filter(t => t.status === 'paid');
+  const supaTxIds = new Set((SUPABASE_SALES_CACHE||[]).map(s=>s.supaId));
+  // Deduplikasi: SESSION tx yang sudah ada di Supabase tidak double count
+  const sessionOnly = sessionTx.filter(t => !t.supaId || !supaTxIds.has(t.supaId));
+  let txList = [...(SUPABASE_SALES_CACHE||[]), ...sessionOnly];
   // Add BIZ_DATA synthetic transactions if session is empty
   if(!txList.length){
     const d = BIZ_DATA.monthly;
@@ -12107,6 +12117,210 @@ async function deleteCapitalInjection(id){
   } catch(e){ showToast('error','Gagal hapus: '+e.message); }
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+   INPUT TRANSAKSI MANUAL — Sales Tracking
+   Insert ke Supabase sales + sale_items tanpa stock deduction
+══════════════════════════════════════════════════════════════ */
+let MS_ITEMS = []; // item rows di modal manual sales
+let SUPABASE_SALES_CACHE = []; // cache sales dari Supabase untuk Sales Tracking
+
+// Tampilkan/sembunyikan tombol Input Manual sesuai role
+function initManualSalesButton(){
+  const btn = document.getElementById('btn-manual-sales');
+  if(!btn) return;
+  const role = currentUser?.role || '';
+  btn.style.display = (role === 'Owner' || role === 'Manajer') ? '' : 'none';
+}
+
+async function openManualSalesModal(){
+  MS_ITEMS = [{productId:'',name:'',qty:1,price:0}];
+  // Set tanggal default = kemarin
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  document.getElementById('ms-date').value = yesterday.toISOString().slice(0,10);
+  document.getElementById('ms-time').value = '08:00';
+  document.getElementById('ms-discount').value = '0';
+  document.getElementById('ms-notes').value = '';
+
+  // Populate cabang dropdown
+  const branchSel = document.getElementById('ms-branch');
+  if(branchSel){
+    branchSel.innerHTML = [
+      {id:'11111111-1111-1111-1111-111111111001', name:'HQ Indrapura'},
+      {id:'11111111-1111-1111-1111-111111111002', name:'Cart #1 Sukamulya'},
+      {id:'11111111-1111-1111-1111-111111111003', name:'Cart #2 Petapahan'},
+    ].map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+  }
+
+  // Populate kasir dropdown dari employees Supabase
+  const staffSel = document.getElementById('ms-staff');
+  if(staffSel){
+    try {
+      const {data} = await supa.from('employees').select('id,name,role').in('role',['Owner','Manajer','Kasir']).order('name');
+      staffSel.innerHTML = (data||[]).map(e=>`<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+    } catch(e){ staffSel.innerHTML='<option value="">— Gagal load —</option>'; }
+  }
+
+  renderManualSalesItems();
+  document.getElementById('manual-sales-overlay').classList.add('open');
+}
+
+function renderManualSalesItems(){
+  const c = document.getElementById('ms-items-container');
+  if(!c) return;
+  c.innerHTML = MS_ITEMS.map((item, idx) => `
+    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin-bottom:6px">
+      <select class="form-input" style="font-size:12px" onchange="onMSProductChange(${idx},this.value)">
+        <option value="">— Pilih Produk —</option>
+        ${MENU.map(m=>`<option value="${m.id}" ${m.id==item.productId?'selected':''}>${m.name}</option>`).join('')}
+        <option value="__custom__" ${item.productId==='__custom__'?'selected':''}>+ Produk Lain (manual)</option>
+      </select>
+      ${item.productId==='__custom__'
+        ? `<input type="text" class="form-input" style="font-size:12px;min-width:120px" placeholder="Nama produk" value="${item.name}" onchange="MS_ITEMS[${idx}].name=this.value;recalcManualSales()">`
+        : `<span style="font-size:12px;color:var(--text2);min-width:80px">${item.name||'—'}</span>`}
+      <input type="number" class="form-input" style="width:60px;font-size:12px" value="${item.qty}" min="1" onchange="MS_ITEMS[${idx}].qty=+this.value;recalcManualSales()">
+      <input type="number" class="form-input" style="width:100px;font-size:12px" value="${item.price}" min="0" placeholder="Harga" onchange="MS_ITEMS[${idx}].price=+this.value;recalcManualSales()">
+      <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px" onclick="removeMSItem(${idx})">×</button>
+    </div>`).join('');
+  recalcManualSales();
+}
+
+function onMSProductChange(idx, productId){
+  if(productId === '__custom__'){
+    MS_ITEMS[idx] = {productId:'__custom__', name:'', qty:MS_ITEMS[idx].qty||1, price:0};
+  } else {
+    const prod = MENU.find(m=>m.id==productId);
+    MS_ITEMS[idx] = {productId, name:prod?.name||'', qty:MS_ITEMS[idx].qty||1, price:prod?.price||0};
+  }
+  renderManualSalesItems();
+}
+
+function addManualSalesItem(){
+  MS_ITEMS.push({productId:'',name:'',qty:1,price:0});
+  renderManualSalesItems();
+}
+
+function removeMSItem(idx){
+  MS_ITEMS.splice(idx,1);
+  if(!MS_ITEMS.length) MS_ITEMS.push({productId:'',name:'',qty:1,price:0});
+  renderManualSalesItems();
+}
+
+function recalcManualSales(){
+  const subtotal = MS_ITEMS.reduce((s,i)=>s+(i.price*i.qty),0);
+  const disc     = parseFloat(document.getElementById('ms-discount')?.value||0);
+  const total    = Math.max(0, subtotal - disc);
+  const rp = n => 'Rp '+Math.round(n).toLocaleString('id');
+  const el = id => document.getElementById(id);
+  if(el('ms-subtotal-preview')) el('ms-subtotal-preview').textContent = rp(subtotal);
+  if(el('ms-disc-preview'))     el('ms-disc-preview').textContent     = '− '+rp(disc);
+  if(el('ms-total-preview'))    el('ms-total-preview').textContent    = rp(total);
+}
+
+async function saveManualSales(){
+  const date     = document.getElementById('ms-date').value;
+  const time     = document.getElementById('ms-time').value || '08:00';
+  const branchId = document.getElementById('ms-branch').value;
+  const staffId  = document.getElementById('ms-staff').value;
+  const method   = document.getElementById('ms-method').value;
+  const discount = parseFloat(document.getElementById('ms-discount').value||0);
+  const notes    = document.getElementById('ms-notes').value.trim();
+
+  if(!date){ showToast('error','Tanggal wajib diisi'); return; }
+  if(!branchId){ showToast('error','Pilih cabang'); return; }
+  if(!staffId){ showToast('error','Pilih kasir'); return; }
+
+  const validItems = MS_ITEMS.filter(i=>(i.productId||i.name) && i.price>0 && i.qty>0);
+  if(!validItems.length){ showToast('error','Minimal 1 item dengan harga dan qty valid'); return; }
+
+  const subtotal    = validItems.reduce((s,i)=>s+(i.price*i.qty),0);
+  const totalAmount = Math.max(0, subtotal - discount);
+  const createdAt   = new Date(date+'T'+time+':00').toISOString();
+
+  try {
+    // INSERT ke sales
+    const {data:saleData, error:saleErr} = await supa
+      .from('sales')
+      .insert({
+        branch_id:      branchId,
+        staff_id:       staffId,
+        shift_id:       null,
+        total_amount:   totalAmount,
+        discount_amount: discount,
+        payment_method: method,
+        payment_status: 'paid',
+        notes:          notes || 'Input manual',
+        created_at:     createdAt,
+      })
+      .select('id').single();
+    if(saleErr) throw saleErr;
+
+    // INSERT ke sale_items
+    const saleItemsPayload = validItems.map(item => {
+      const prod = MENU.find(m=>m.id==item.productId);
+      return {
+        sale_id:    saleData.id,
+        product_id: prod?.supaId || null,
+        product_name: item.name || prod?.name || 'Produk Manual',
+        quantity:   item.qty,
+        unit_price: item.price,
+        subtotal:   item.price * item.qty,
+      };
+    });
+
+    const {error:itemErr} = await supa.from('sale_items').insert(saleItemsPayload);
+    if(itemErr) console.warn('sale_items insert warn:', itemErr.message);
+
+    document.getElementById('manual-sales-overlay').classList.remove('open');
+    showToast('success', `Transaksi manual ${date} berhasil disimpan — Total Rp ${totalAmount.toLocaleString('id')}`);
+    logActivity('Manual Sales', `Input transaksi ${date}: Rp ${totalAmount.toLocaleString('id')}`);
+
+    // Refresh sales tracking jika sedang aktif
+    if(isModActive('sales-tracking')){
+      await loadSupabaseSalesForTracking();
+      renderSalesTracking();
+    }
+  } catch(e){
+    showToast('error','Gagal simpan: '+e.message);
+  }
+}
+
+// Load sales dari Supabase untuk Sales Tracking (merge dengan SESSION)
+async function loadSupabaseSalesForTracking(){
+  try {
+    const fromEl = document.getElementById('st-date-from');
+    const toEl   = document.getElementById('st-date-to');
+    const from   = fromEl?.value || new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const to     = toEl?.value   || new Date().toISOString().slice(0,10);
+
+    const {data, error} = await supa
+      .from('sales')
+      .select('id, created_at, total_amount, discount_amount, payment_method, payment_status, notes, staff_id, branch_id, employees(name), sale_items(product_name, quantity, unit_price)')
+      .eq('payment_status','paid')
+      .gte('created_at', from+'T00:00:00')
+      .lte('created_at', to+'T23:59:59')
+      .order('created_at', {ascending:false});
+    if(error) throw error;
+
+    // Normalize ke format SESSION.transactions
+    SUPABASE_SALES_CACHE = (data||[]).map(s=>({
+      id:         'TRX-'+s.id.slice(-8).toUpperCase(),
+      supaId:     s.id,
+      createdAt:  s.created_at,
+      time:       s.created_at,
+      items:      (s.sale_items||[]).map(i=>({name:i.product_name, qty:i.quantity, price:i.unit_price})),
+      subtotal:   parseFloat(s.total_amount) + parseFloat(s.discount_amount||0),
+      total:      parseFloat(s.total_amount),
+      discount:   parseFloat(s.discount_amount||0),
+      discountBreakdown:{manual:parseFloat(s.discount_amount||0),member:0,kupon:0},
+      method:     s.payment_method || 'cash',
+      kasir:      s.employees?.name || 'Kasir',
+      status:     'paid',
+      notes:      s.notes,
+      isSupabase: true,
+    }));
+  } catch(e){ console.warn('loadSupabaseSalesForTracking error:', e); }
+}
 
 function ensureExecSummaryDOMs(){
   // If exec-alerts div doesn't exist, we render without it
@@ -14750,6 +14964,82 @@ document.addEventListener('DOMContentLoaded', () => {
         Print Struk
       </button>
       <button onclick="closeReceipt()" style="flex:1;padding:10px;background:none;border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;font-family:inherit;font-size:12px">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- MANUAL SALES MODAL -->
+<div class="confirm-overlay" id="manual-sales-overlay">
+  <div class="confirm-box" style="max-width:560px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h4 style="margin:0">Input Transaksi Manual</h4>
+      <button onclick="document.getElementById('manual-sales-overlay').classList.remove('open')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px">×</button>
+    </div>
+    <!-- Row 1: Tanggal + Waktu -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Tanggal</label>
+        <input type="date" id="ms-date" class="form-input">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Waktu</label>
+        <input type="time" id="ms-time" class="form-input" value="08:00">
+      </div>
+    </div>
+    <!-- Row 2: Cabang + Kasir -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Cabang</label>
+        <select id="ms-branch" class="form-input"></select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Kasir</label>
+        <select id="ms-staff" class="form-input"></select>
+      </div>
+    </div>
+    <!-- Row 3: Metode Bayar + Diskon -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Metode Pembayaran</label>
+        <select id="ms-method" class="form-input">
+          <option value="cash">Cash</option>
+          <option value="qris">QRIS</option>
+          <option value="card">Kartu</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Diskon (Rp)</label>
+        <input type="number" id="ms-discount" class="form-input" placeholder="0" min="0" value="0" onchange="recalcManualSales()">
+      </div>
+    </div>
+    <!-- Items -->
+    <div style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">Item Pesanan</label>
+        <button class="btn btn-ghost btn-sm" onclick="addManualSalesItem()">+ Tambah Item</button>
+      </div>
+      <div id="ms-items-container"></div>
+    </div>
+    <!-- Total preview -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>Subtotal</span><span id="ms-subtotal-preview">Rp 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>Diskon</span><span id="ms-disc-preview" style="color:var(--red)">− Rp 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+        <span>Total</span><span id="ms-total-preview" style="color:var(--green)">Rp 0</span>
+      </div>
+    </div>
+    <!-- Catatan -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Catatan (opsional)</label>
+      <input type="text" id="ms-notes" class="form-input" placeholder="Catatan kasir...">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('manual-sales-overlay').classList.remove('open')">Batal</button>
+      <button class="btn btn-primary" onclick="saveManualSales()">Simpan Transaksi</button>
     </div>
   </div>
 </div>
