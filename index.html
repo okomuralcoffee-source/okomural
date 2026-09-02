@@ -5409,7 +5409,10 @@ function showModule(mod){
       await loadAttendanceFromSupabase();
       renderAttendanceModule();
     },
-    'finance':renderCashRecon,
+    'finance': async () => {
+      await loadSupabaseSalesForTracking();
+      renderCashRecon();
+    },
     'hr': async ()=>{ await loadKaryawanFromSupabase(); renderHRTable(); },
     'crm': async () => {
       await loadCRMFromSupabase();
@@ -6957,8 +6960,11 @@ function saveBOM(publish=false){
    CASH RECONCILIATION RENDER
 ══════════════════════════════════════════════════ */
 function renderCashRecon(){
-  // Hanya transaksi paid (bukan void)
-  const txs = SESSION.transactions.filter(t => t.status === 'paid');
+  // Merge Supabase cache + SESSION lokal (deduplikasi)
+  const sessionTx = (SESSION.transactions||[]).filter(t=>t.status==='paid');
+  const supaTxIds = new Set((SUPABASE_SALES_CACHE||[]).map(s=>s.supaId));
+  const sessionOnly = sessionTx.filter(t=>!t.supaId||!supaTxIds.has(t.supaId));
+  const txs = [...(SUPABASE_SALES_CACHE||[]), ...sessionOnly];
   const totalRev = txs.reduce((s,t)=>s+t.total,0);
   const totalHPP = txs.reduce((s,t)=>s+(t.hpp||0),0);
   const totalGP = totalRev - totalHPP;
