@@ -5434,7 +5434,14 @@ function showModule(mod){
     'activity-log':  renderActivityLog,
     'auto-backup':   loadBackupDashboard,
     'exec-summary':renderExecSummary,
-    'health-score':renderHealthScore,
+    'health-score': async () => {
+      await Promise.all([
+        loadSupabaseSalesForTracking(),
+        loadExpensesFromSupabase(),
+        loadKaryawanFromSupabase(),
+      ]);
+      renderHealthScore();
+    },
     'pl-statement': async () => {
       await Promise.all([
         loadSupabaseSalesForTracking(),
@@ -6432,13 +6439,18 @@ function syncLiveDashboard(){
 /* ── HEALTH SCORE ── */
 function renderHealthScore(){
   const el=document.getElementById('hs-expense-banner'); if(!el)return;
-  // Gunakan SESSION data real — bukan seed
-  const paid = SESSION.transactions.filter(t => t.status === 'paid');
-  const rev  = paid.reduce((s,t) => s+t.total, 0);
+  // Merge SUPABASE_SALES_CACHE + SESSION lokal
+  const sessionTx  = (SESSION.transactions||[]).filter(t=>t.status==='paid');
+  const supaTxIds  = new Set((SUPABASE_SALES_CACHE||[]).map(s=>s.supaId));
+  const sessionOnly= sessionTx.filter(t=>!t.supaId||!supaTxIds.has(t.supaId));
+  const paid = [...(SUPABASE_SALES_CACHE||[]), ...sessionOnly];
+  const rev  = paid.reduce((s,t) => s+(t.total||0), 0);
   const cogs = paid.reduce((s,t) => s+(t.hpp||0), 0);
-  // BELANJA_LOG sebagai opex harian
-  const opex = BELANJA_LOG.filter(l => l.type==='expense').reduce((s,l) => s+l.amount, 0);
-  // Payroll dari KARYAWAN_DB
+  // OPEX dari Supabase (OPEX_DB) atau fallback BELANJA_LOG
+  const opex = (OPEX_DB&&OPEX_DB.length>0)
+    ? OPEX_DB.reduce((s,e)=>s+(parseFloat(e.amount||e.nominal||0)),0)
+    : BELANJA_LOG.filter(l=>l.type==='expense').reduce((s,l)=>s+l.amount,0);
+  // Payroll dari KARYAWAN_DB (Supabase)
   const payroll = KARYAWAN_DB.reduce((s,k) => s+(k.gaji||0), 0);
   // Kalau belum ada transaksi hari ini, tampilkan pesan
   if(rev === 0){
