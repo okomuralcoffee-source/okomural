@@ -6254,6 +6254,34 @@ async function renderLiveDashboard(){
       <div class="ld-kpi-value" style="color:${k.color}">${k.value}</div>
     </div>`).join('');
 
+  // Stock kritis dari Supabase
+  const stockAlertEl = document.getElementById('ld-stock-alerts');
+  if(stockAlertEl){
+    try {
+      const {data: stocks} = await supa
+        .from('inventory_stocks')
+        .select('quantity, min_stock_alert, unit, materials_master(name)')
+        .order('quantity', {ascending: true})
+        .limit(50);
+      const critical = (stocks||[]).filter(s => parseFloat(s.quantity||0) <= 0);
+      const warning  = (stocks||[]).filter(s => {
+        const qty = parseFloat(s.quantity||0);
+        const min = parseFloat(s.min_stock_alert||0);
+        return qty > 0 && min > 0 && qty <= min;
+      });
+      if(!critical.length && !warning.length){
+        stockAlertEl.innerHTML = '<div style="font-size:12px;color:var(--green);padding:8px 0">✓ Semua stok aman</div>';
+      } else {
+        const items = [
+          ...critical.slice(0,5).map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px">${s.materials_master?.name||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--red);background:var(--red-dim);padding:2px 7px;border-radius:10px">HABIS</span></div>`),
+          ...warning.slice(0,3).map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px">${s.materials_master?.name||'—'}</span><span style="font-size:10px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.15);padding:2px 7px;border-radius:10px">Sisa ${parseFloat(s.quantity).toFixed(0)} ${s.unit||''}</span></div>`)
+        ];
+        const more = critical.length + warning.length - items.length;
+        stockAlertEl.innerHTML = items.join('') + (more > 0 ? `<div style="font-size:11px;color:var(--text3);padding:6px 0 2px">+${more} bahan lainnya kritis</div>` : '');
+      }
+    } catch(e){ stockAlertEl.innerHTML='<div style="font-size:11px;color:var(--text3)">Gagal load stok</div>'; }
+  }
+
   // Shift status per cabang
   const shiftEl = document.getElementById('ld-shift-status');
   if(shiftEl){
