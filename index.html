@@ -9870,6 +9870,46 @@ function submitRestock(){
     createdAt: now.toISOString()
   };
   BELANJA_LOG.push(entry);
+
+  // ── Sync ke Supabase (async, tidak block UI) ──────────────────
+  (async () => {
+    try {
+      // 1. Update inventory_stocks di Supabase
+      if(invItem.materialId){
+        const branchId = getBranchUUID();
+        const {data: existing} = await supa
+          .from('inventory_stocks')
+          .select('id, quantity')
+          .eq('material_id', invItem.materialId)
+          .eq('branch_id', branchId)
+          .single();
+        if(existing){
+          await supa.from('inventory_stocks')
+            .update({ quantity: parseFloat(existing.quantity) + qty, updated_at: new Date().toISOString() })
+            .eq('id', existing.id);
+        } else {
+          await supa.from('inventory_stocks').insert({
+            material_id: invItem.materialId, branch_id: branchId,
+            quantity: qty, unit: invItem.unit || 'gr', min_stock_alert: 0
+          });
+        }
+      }
+      // 2. INSERT ke expenses sebagai Belanja Harian
+      const BELANJA_HARIAN_CAT_ID = '09ebd1b7-33c6-45e1-9aec-b6f9e920f674';
+      await supa.from('expenses').insert({
+        category_id:  BELANJA_HARIAN_CAT_ID,
+        branch_id:    getBranchUUID(),
+        amount:       harga,
+        expense_date: new Date().toISOString().slice(0,10),
+        notes:        'Restock ' + invItem.name + ' +' + qty + ' ' + invItem.unit + (supplier ? ' · ' + supplier : ''),
+        created_by:   getStaffUUID() || null,
+      });
+      logActivity('Belanja Harian', invItem.name + ' +' + qty + ' ' + invItem.unit + ' · Rp ' + harga.toLocaleString('id'));
+    } catch(e){
+      console.warn('submitRestock Supabase sync error:', e.message);
+    }
+  })();
+
   // Re-render inventory jika sedang terbuka
   if(typeof renderInventory === 'function') renderInventory();
   checkStockAlerts();
@@ -9882,7 +9922,7 @@ function submitRestock(){
   showToast('success', invItem.name + ' direstok +' + qty + ' ' + invItem.unit,
     'Stok: ' + oldQty + ' → ' + invItem.qty + ' · HPP/unit: Rp ' + invItem.costPerUnit.toLocaleString('id'));
   saveBELANJA();
-  saveSESSION(); // INV sudah berubah, sync ke localStorage
+  saveSESSION();
   renderBelanjaBody();
 }
 /* ── Patch shift report: include belanja harian ── */
