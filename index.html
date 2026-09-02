@@ -13607,7 +13607,7 @@ async function analyzeCapexWithAI(){
       `- ${c.nama} (${c.kategori}): Rp ${Number(c.nilai).toLocaleString('id')}, dibeli ${c.tanggal}, umur pakai ${c.umur} tahun`
     ).join('\n') || 'Belum ada data CAPEX';
     const prompt = `Kamu adalah konsultan keuangan senior untuk OKOMURAL Coffee, bisnis kafe F&B di Indonesia.\n\nDATA BISNIS SAAT INI:\n- Nama Cabang: ${payload.branch_name||'OKOMURAL'}\n- Total Revenue: Rp ${Number(payload.revenue||0).toLocaleString('id')}\n- Total OPEX: Rp ${Number(payload.opex||0).toLocaleString('id')}\n- Jumlah Karyawan: ${payload.karyawan_count||0} orang\n- Bahan Baku Kritis: ${payload.stok_kritis||0} item\n\nDATA CAPEX:\n${capexList}\n\nBerikan TEPAT 4 rekomendasi dalam Bahasa Indonesia. Format: JSON array langsung (tanpa markdown):\n[{"priority":"high","title":"Judul","desc":"Penjelasan 2-3 kalimat","action":"Langkah konkret"}]\npriority: high/medium/low`;
-    const MODELS = ['gemini-2.5-flash','gemini-3.1-flash','gemini-2.0-flash'];
+    const MODELS = ['gemini-3.5-flash','gemini-2.5-flash','gemini-3.1-flash-lite'];
     let recs = [], lastErr = '';
     for(const model of MODELS){
       try {
