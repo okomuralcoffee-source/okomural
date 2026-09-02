@@ -9824,9 +9824,29 @@ function submitPengeluaran(){
     branchId: activeBranch?.id || 'CAB-001',
   };
   BELANJA_LOG.push(entry);
-  // SUPABASE: save expense
-  if(typeof saveExpenseToSupabase === 'function')
-    saveExpenseToSupabase({amount:nominal, description:nama+' ('+kategori+')', date:now.toISOString().slice(0,10)});
+  // SUPABASE: insert expense langsung dengan category_id yang benar
+  (async () => {
+    try {
+      // Map kategori value ke category_id Supabase
+      const catMap = {
+        'bahan_baku':   '09ebd1b7-33c6-45e1-9aec-b6f9e920f674', // Belanja Harian
+        'operasional':  'd7be1b46-4e4f-4fea-9891-ca13e6f5a026', // Lain-lain
+        'perlengkapan': 'ac0cbf86-a78f-4a72-bc01-09cc61fd2048', // Perlengkapan
+        'lainnya':      'd7be1b46-4e4f-4fea-9891-ca13e6f5a026', // Lain-lain
+      };
+      const catId = catMap[kategori] || 'd7be1b46-4e4f-4fea-9891-ca13e6f5a026';
+      const desc  = nama + (catatan ? ' · ' + catatan : '');
+      await supa.from('expenses').insert({
+        category_id:  catId,
+        branch_id:    getBranchUUID(),
+        amount:       nominal,
+        expense_date: now.toISOString().slice(0,10),
+        description:  desc,
+        recorded_by:  getStaffUUID() || null,
+      });
+      logActivity('Pengeluaran', nama + ' · Rp ' + nominal.toLocaleString('id'));
+    } catch(e){ console.warn('submitPengeluaran Supabase error:', e.message); }
+  })();
 
   // Reset form
   ['bh-nama','bh-nominal','bh-catatan'].forEach(id => {
