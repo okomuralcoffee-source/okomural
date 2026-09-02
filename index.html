@@ -5461,8 +5461,14 @@ function showModule(mod){
       ]);
       renderPayrollTable();
     },
-    'capex-advisory':renderCapexAdvisory,
-    'capex-logs':renderCapexLogs,
+    'capex-advisory': async () => {
+      await Promise.all([loadCapexFromSupabase(), loadSupabaseSalesForTracking()]);
+      renderCapexAdvisory();
+    },
+    'capex-logs': async () => {
+      await loadCapexFromSupabase();
+      renderCapexLogs();
+    },
     'capital-injection':renderCapitalInjection,
     'expenses': async ()=>{
       await loadExpensesFromSupabase();
@@ -12391,21 +12397,46 @@ function saveCapex(){
   if(!nama){ showToast('error','Nama aset wajib diisi'); return; }
   if(!nilai){ showToast('error','Nilai wajib diisi'); return; }
   if(!tanggal){ showToast('error','Tanggal wajib diisi'); return; }
-  CAPEX_DB.push({
-    id:'CX-'+String(capexIdCounter++).padStart(3,'0'),
-    nama, kategori, nilai, tanggal, cabang, umur, keterangan:ket
-  });
+  const cxNo = 'CX-'+String(capexIdCounter++).padStart(3,'0');
+  const newCx = {id:cxNo, nama, kategori, nilai, tanggal, cabang, umur, keterangan:ket};
+  CAPEX_DB.push(newCx);
   saveCAPEX();
   closeCapexModal();
   renderCapexLogs();
   showToast('success','CAPEX dicatat',nama+' · '+rp(nilai));
+  // Sync ke Supabase
+  (async()=>{
+    try {
+      const {data,error} = await supa.from('capex_logs').insert({
+        capex_no:     cxNo,
+        name:         nama,
+        category:     kategori,
+        value:        nilai,
+        purchase_date:tanggal,
+        useful_life:  umur||5,
+        branch_id:    getBranchUUID()||null,
+        branch_name:  cabang,
+        notes:        ket||null,
+        created_by:   getStaffUUID()||null,
+      }).select('id').single();
+      if(error) throw error;
+      newCx.supaId = data.id;
+      saveCAPEX();
+      logActivity('CAPEX','Tambah: '+cxNo+' · '+nama+' Rp '+nilai.toLocaleString('id'));
+    } catch(e){ console.warn('CAPEX save error:',e.message); }
+  })();
 }
 function deleteCapex(id){
   openConfirm('Hapus CAPEX ini?','Data tidak bisa dikembalikan.','Hapus',()=>{
+    const cx = CAPEX_DB.find(c=>c.id===id);
     const idx = CAPEX_DB.findIndex(c=>c.id===id);
     if(idx>-1) CAPEX_DB.splice(idx,1);
+    saveCAPEX();
     renderCapexLogs();
     showToast('info','CAPEX dihapus');
+    if(cx?.supaId) supa.from('capex_logs').delete().eq('id',cx.supaId)
+      .then(({error})=>{ if(error) console.warn('CAPEX delete sync:',error.message); });
+    logActivity('CAPEX','Hapus: '+id);
   });
 }
 /* ══════════════════════════════════════════════════
@@ -12416,8 +12447,10 @@ function renderCapexAdvisory(){
   const el = document.getElementById('capex-rec-list');
   if(!el) return;
   const totalCapex = CAPEX_DB.reduce((s,c)=>s+c.nilai, 0);
-  const cur = BIZ_DATA.monthly[BIZ_DATA.monthly.length-1];
-  const rev = cur.rev;
+  // Revenue dari SUPABASE_SALES_CACHE (real) atau fallback BIZ_DATA
+  const rev = (SUPABASE_SALES_CACHE&&SUPABASE_SALES_CACHE.length>0)
+    ? SUPABASE_SALES_CACHE.reduce((s,t)=>s+(t.total||0),0)
+    : BIZ_DATA.monthly[BIZ_DATA.monthly.length-1].rev;
   // Auto recommendations based on real data
   const recs = [];
   const capexRatio = (totalCapex/rev*100).toFixed(1);
@@ -13245,6 +13278,38 @@ async function manualSyncOfflineQueue(){
   if(btn){ btn.disabled=false; btn.textContent='↑ Sync Sekarang'; }
   document.getElementById('offline-queue-overlay').classList.remove('open');
   await showOfflineQueue();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CAPEX LOGS — Load dari Supabase
+══════════════════════════════════════════════════════════════ */
+async function loadCapexFromSupabase(){
+  try {
+    const {data, error} = await supa
+      .from('capex_logs')
+      .select('*')
+      .order('purchase_date', {ascending: false});
+    if(error) throw error;
+    // Full replace CAPEX_DB
+    CAPEX_DB.length = 0;
+    capexIdCounter = 1;
+    (data||[]).forEach(row => {
+      const no = row.capex_no || ('CX-'+String(capexIdCounter).padStart(3,'0'));
+      const num = parseInt((no.match(/\d+$/)||[0])[0])||0;
+      if(num >= capexIdCounter) capexIdCounter = num + 1;
+      CAPEX_DB.push({
+        id:       no,
+        supaId:   row.id,
+        nama:     row.name,
+        kategori: row.category || 'Peralatan',
+        nilai:    parseFloat(row.value||0),
+        tanggal:  row.purchase_date,
+        umur:     row.useful_life || 5,
+        cabang:   row.branch_name || 'HQ Indrapura',
+        notes:    row.notes || '',
+      });
+    });
+  } catch(e){ console.warn('loadCapexFromSupabase error:',e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════
