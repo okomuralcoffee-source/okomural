@@ -5443,7 +5443,10 @@ function showModule(mod){
       renderPL();
     },
     'shareholder':renderShareholder,
-    'special-events':renderSpecialEvents,
+    'special-events': async () => {
+      await loadSpecialEventsFromSupabase();
+      renderSpecialEvents();
+    },
     'payroll': async () => {
       await Promise.all([
         loadKaryawanFromSupabase(),
@@ -6630,6 +6633,9 @@ function settleEvent(evId){
     ev.status='selesai';
     renderSpecialEvents();
     showToast('success','Event diselesaikan',ev.name+' · Net: '+rp(ev.rev-ev.cost));
+    if(ev.supaId) supa.from('special_events').update({status:'selesai',actual_revenue:ev.rev,tx_count:ev.tx||0,updated_at:new Date().toISOString()}).eq('id',ev.supaId)
+      .then(({error})=>{ if(error) console.warn('Event settle sync:',error.message); });
+    logActivity('Special Event','Selesai: '+evId+' · '+ev.name);
   });
 }
 function openAddEventModal(){
@@ -6659,8 +6665,28 @@ function openAddEventModal(){
       };
       BIZ_DATA.events.push(newEv);
       renderSpecialEvents();
-      logActivity('Edit Data','Event baru: '+nama);
       showToast('success','Event ditambahkan',nama+' · '+tanggal);
+      // Sync ke Supabase
+      (async()=>{
+        try {
+          const {data,error} = await supa.from('special_events').insert({
+            event_no:       newEv.id,
+            name:           nama,
+            event_date:     tanggal,
+            venue:          venue||null,
+            branch_id:      getBranchUUID(),
+            target_revenue: target,
+            actual_revenue: 0,
+            cost,
+            tx_count:       0,
+            status:         'aktif',
+            created_by:     getStaffUUID()||null,
+          }).select('id').single();
+          if(error) throw error;
+          newEv.supaId = data.id;
+          logActivity('Special Event','Tambah: '+newEv.id+' · '+nama);
+        } catch(e){ console.warn('Event save error:',e.message); }
+      })();
     }
   );
 }
@@ -13207,6 +13233,33 @@ async function manualSyncOfflineQueue(){
   if(btn){ btn.disabled=false; btn.textContent='↑ Sync Sekarang'; }
   document.getElementById('offline-queue-overlay').classList.remove('open');
   await showOfflineQueue();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SPECIAL EVENTS — Load dari Supabase
+══════════════════════════════════════════════════════════════ */
+async function loadSpecialEventsFromSupabase(){
+  try {
+    const {data, error} = await supa
+      .from('special_events')
+      .select('*')
+      .order('event_date', {ascending: false});
+    if(error) throw error;
+    // Full replace BIZ_DATA.events
+    BIZ_DATA.events = (data||[]).map(row => ({
+      id:      row.event_no || ('EV-'+row.id.slice(-6).toUpperCase()),
+      supaId:  row.id,
+      name:    row.name,
+      date:    row.event_date,
+      venue:   row.venue || '—',
+      base:    parseFloat(row.target_revenue||0),
+      rev:     parseFloat(row.actual_revenue||0),
+      cost:    parseFloat(row.cost||0),
+      tx:      row.tx_count || 0,
+      status:  row.status || 'aktif',
+      notes:   row.notes || '',
+    }));
+  } catch(e){ console.warn('loadSpecialEventsFromSupabase error:',e.message); }
 }
 
 /* ══════════════════════════════════════════════════════════════
