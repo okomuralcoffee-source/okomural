@@ -9745,8 +9745,8 @@ function renderBelanjaBody(){
     `;
   } else {
     // Restock tab
-    const invOptions = INV.map(i =>
-      `<option value="${i.id}">${i.name} (${i.unit}) — Stok: ${i.qty}</option>`
+    const invOptions = INV.map((i,idx) =>
+      `<option value="${idx}">${i.name} (${i.unit}) — Stok: ${i.qty}</option>`
     ).join('');
     body.innerHTML = summaryHTML + `
       <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Restock Bahan Baku</div>
@@ -9840,15 +9840,15 @@ function updateHPPPreview(){
   }
 }
 function submitRestock(){
-  const bahanId = parseInt(document.getElementById('bh-bahan')?.value);
+  const bahanIdx = parseInt(document.getElementById('bh-bahan')?.value);
   const qty = parseFloat(document.getElementById('bh-qty')?.value) || 0;
   const harga = parseInt(document.getElementById('bh-harga')?.value) || 0;
   const supplier = document.getElementById('bh-supplier')?.value.trim();
-  if(!bahanId){ showToast('error','Pilih bahan baku'); return; }
+  if(isNaN(bahanIdx)){ showToast('error','Pilih bahan baku'); return; }
   if(qty <= 0){ showToast('error','Qty harus lebih dari 0'); return; }
   if(harga <= 0){ showToast('error','Harga beli harus diisi'); return; }
   // Update inventory stock
-  const invItem = INV.find(i => i.id === bahanId);
+  const invItem = INV[bahanIdx];
   if(!invItem){ showToast('error','Bahan tidak ditemukan'); return; }
   const oldQty = invItem.qty;
   invItem.qty = parseFloat((invItem.qty + qty).toFixed(3));
@@ -9880,12 +9880,12 @@ function submitRestock(){
   (async () => {
     try {
       // 1. Update inventory_stocks di Supabase
-      if(invItem.materialId){
+      if(invItem.matId){
         const branchId = getBranchUUID();
         const {data: existing} = await supa
           .from('inventory_stocks')
           .select('id, quantity')
-          .eq('material_id', invItem.materialId)
+          .eq('material_id', invItem.matId)
           .eq('branch_id', branchId)
           .single();
         if(existing){
@@ -9894,7 +9894,7 @@ function submitRestock(){
             .eq('id', existing.id);
         } else {
           await supa.from('inventory_stocks').insert({
-            material_id: invItem.materialId, branch_id: branchId,
+            material_id: invItem.matId, branch_id: branchId,
             quantity: qty, unit: invItem.unit || 'gr', min_stock_alert: 0
           });
         }
