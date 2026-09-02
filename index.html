@@ -3587,10 +3587,10 @@ async function hydrateUserFromSession(session) {
   <!-- Filters -->
   <div class="st-filter-row">
     <div style="font-size:11px;color:var(--text3);font-weight:600">Periode:</div>
-    <input type="date" id="st-date-from" class="st-date-input" onchange="renderSalesTracking()">
+    <input type="date" id="st-date-from" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)">
     <div style="font-size:11px;color:var(--text3)">—</div>
-    <input type="date" id="st-date-to" class="st-date-input" onchange="renderSalesTracking()">
-    <select id="st-method-filter" class="st-date-input" onchange="renderSalesTracking()">
+    <input type="date" id="st-date-to" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)">
+    <select id="st-method-filter" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)">
       <option value="all">Semua Metode</option>
       <option value="cash">Cash</option>
       <option value="qris">QRIS</option>
@@ -5416,7 +5416,10 @@ function showModule(mod){
       renderCRMTable();
     },
     // 'purchase-orders' → handled by Override 2 (renderPOList)
-    // 'sales-tracking'  → handled by Override 2 (setSalesDateRange → renderSalesTracking)
+    'sales-tracking': async () => {
+      setSalesDateRange('today');
+    },
+    // 'sales-tracking' also handled by Override 2 (setSalesDateRange → renderSalesTracking)
     'settings': async ()=>{
       renderSettingsCabang&&renderSettingsCabang();
       renderKuponList&&renderKuponList();
@@ -11805,7 +11808,7 @@ const _showModSalesPO = showModule;
 showModule = function(mod){
   _showModSalesPO(mod);
   if(mod === 'sales-tracking'){
-    setSalesDateRange('today');
+    // auto-load handled by allRenders above
   }
   if(mod === 'purchase-orders'){
     renderPOList();
