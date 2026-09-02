@@ -6636,9 +6636,10 @@ function filterBOMStatus(el,status){
   document.querySelectorAll('.adv-sort-btn').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');bomFilterStatus=status;renderBOMList();
 }
-const MATERIAL_OPTIONS=['Kopi Robusta','Susu Full Cream','Matcha Powder','Sirup Vanilla','Gula Pasir','Teh Tarik Mix','Dark Cokelat','Roti Tawar','Es Batu','Krim Kocok','Cokelat Bubuk','Karamel Sirup','Hazelnut Sirup','Vanilla Essence','Air Panas','Susu Oat','Susu Almond'];
+// MATERIAL_OPTIONS removed — pakai getMaterialOptions() dari MATERIALS_DB Supabase
+function getMaterialOptions(){return MATERIALS_DB.map(m=>({id:m.id,name:m.name,unit:m.default_unit||'gr',cost:m.cost_per_unit||0}));}
 const UNIT_OPTIONS=['gr','ml','pcs','lbr','sdm','sdt','loaf','sachet'];
-function openBOMEditor(productId){
+async function openBOMEditor(productId){
   if(productId===null){const nm=MENU.find(m=>!BOM_DATA[m.id]);productId=nm?nm.id:MENU[0].id;}
   currentBOMProductId=productId;
   const item=MENU.find(m=>m.id===productId);if(!item)return;
@@ -6651,6 +6652,8 @@ function openBOMEditor(productId){
     <div class="bp-emoji">${item.emoji}</div>
     <div><div class="bp-name">${item.name}</div><div class="bp-cat">${catMap[item.cat]||item.cat}</div></div>
     <div class="bp-price"><div class="bp-price-lbl">Harga Jual</div><div class="bp-price-val">Rp ${item.price.toLocaleString('id')}</div></div>`;
+  // Load BOM dari Supabase jika produk punya supaId
+  if(item.supaId) await loadBOMFromSupabase(productId, item.supaId);
   const bom=BOM_DATA[productId]||{yield:1,yield_unit:'cup',prep_time:3,notes:'',ingredients:[]};
   if(!BOM_DATA[productId])BOM_DATA[productId]=bom;
   document.getElementById('bom-yield').value=bom.yield;
@@ -6672,7 +6675,7 @@ function renderIngRows(ingredients){
   }
   container.innerHTML=ingredients.map((ing,idx)=>{
     const hpp=ing.qty*(1+ing.waste_pct/100)*ing.cost_per_unit;
-    const matOpts=MATERIAL_OPTIONS.map(m=>`<option value="${m}"${m===ing.material?' selected':''}>${m}</option>`).join('');
+    const matOpts=getMaterialOptions().map(m=>`<option value="${m.name}"${m.name===ing.material?' selected':''}>${m.name}</option>`).join('')+'<option value="__custom__">+ Lainnya...</option>';
     const unitOpts=UNIT_OPTIONS.map(u=>`<option value="${u}"${u===ing.unit?' selected':''}>${u}</option>`).join('');
     return `<div class="bom-ing-row" id="ing-row-${idx}">
       <div><select onchange="updateIngredient(${idx},'material',this.value)">${matOpts}<option value="__custom__">+ Lainnya...</option></select></div>
@@ -6688,11 +6691,19 @@ function renderIngRows(ingredients){
 }
 function updateIngredient(idx,field,value){
   if(!BOM_DATA[currentBOMProductId])return;
-  if(BOM_DATA[currentBOMProductId].ingredients[idx])BOM_DATA[currentBOMProductId].ingredients[idx][field]=value;
+  const ing=BOM_DATA[currentBOMProductId].ingredients[idx];if(!ing)return;
+  ing[field]=value;
+  // Auto-fill unit & cost_per_unit saat material dipilih dari dropdown
+  if(field==='material'){
+    const mat=getMaterialOptions().find(m=>m.name===value);
+    if(mat){if(!ing.unit||ing.unit==='gr')ing.unit=mat.unit;if(!ing.cost_per_unit||ing.cost_per_unit===0)ing.cost_per_unit=mat.cost;}
+    renderIngRows(BOM_DATA[currentBOMProductId].ingredients);recalcBOM();
+  }
 }
 function addIngredientRow(){
   if(!BOM_DATA[currentBOMProductId]){BOM_DATA[currentBOMProductId]={yield:+document.getElementById('bom-yield').value||1,yield_unit:document.getElementById('bom-yield-unit').value||'cup',prep_time:+document.getElementById('bom-prep-time').value||3,notes:document.getElementById('bom-notes').value||'',ingredients:[]};}
-  BOM_DATA[currentBOMProductId].ingredients.push({id:'b'+Date.now(),material:'Kopi Robusta',qty:0,unit:'gr',waste_pct:0,cost_per_unit:0,notes:''});
+  const _m0=getMaterialOptions()[0]||{name:'',unit:'gr',cost:0};
+  BOM_DATA[currentBOMProductId].ingredients.push({id:'b'+Date.now(),material:_m0.name,qty:0,unit:_m0.unit,waste_pct:0,cost_per_unit:_m0.cost,notes:''});
   renderIngRows(BOM_DATA[currentBOMProductId].ingredients);recalcBOM();
 }
 function removeIngredient(idx){
@@ -12138,6 +12149,28 @@ async function saveProdukToSupabase(item, isEdit){
   } catch(e){ console.warn('[Phase4] saveProdukToSupabase error:', e.message); }
 }
 
+// Load BOM ingredients dari Supabase product_ingredients
+async function loadBOMFromSupabase(productId, supaProductId){
+  try {
+    const { data, error } = await supa
+      .from('product_ingredients')
+      .select('id, quantity, unit, waste_pct, material_id, materials_master(id, name, default_unit, cost_per_unit)')
+      .eq('product_id', supaProductId);
+    if(error) throw error;
+    if(!data || data.length === 0) return; // BOM kosong, biarkan user isi sendiri
+    BOM_DATA[productId] = BOM_DATA[productId] || {yield:1,yield_unit:'cup',prep_time:3,notes:'',ingredients:[]};
+    BOM_DATA[productId].ingredients = data.map((row,i) => ({
+      id: 'b'+supaProductId.slice(-4)+i,
+      material: row.materials_master?.name || '',
+      qty: row.quantity || 0,
+      unit: row.unit || row.materials_master?.default_unit || 'gr',
+      waste_pct: row.waste_pct || 0,
+      cost_per_unit: row.materials_master?.cost_per_unit || 0,
+      notes: ''
+    }));
+  } catch(e){ console.warn('loadBOMFromSupabase error:', e); }
+}
+
 // Save BOM ingredients → upsert product_ingredients
 async function saveBOMToSupabase(productId){
   const item = MENU.find(m => m.id === productId);
@@ -12151,12 +12184,14 @@ async function saveBOMToSupabase(productId){
       // Lookup material_id dari INV
       const inserts = bom.ingredients.map(ing => {
         const inv = INV.find(i => i.name === ing.material);
-        return inv?.materialId ? {
+        const mat = MATERIALS_DB.find(m => m.name === ing.material);
+        const matId = inv?.materialId || mat?.id || null;
+        return matId ? {
           product_id:  item.supaId,
-          material_id: inv.materialId,
+          material_id: matId,
           quantity:    ing.qty,
           waste_pct:   ing.waste_pct || 0,
-          unit:        ing.unit || inv.unit
+          unit:        ing.unit || inv?.unit || mat?.default_unit || 'gr'
         } : null;
       }).filter(Boolean);
       if(inserts.length){
