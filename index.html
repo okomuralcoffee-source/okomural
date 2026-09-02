@@ -4028,8 +4028,8 @@ async function hydrateUserFromSession(session) {
     </div>
     <div class="ob-modal-btns">
       <button class="btn btn-secondary" style="flex:1" onclick="closePOModal()">Batal</button>
-      <button class="btn btn-secondary" style="flex:1" onclick="savePO('draft')">Simpan Draft</button>
-      <button class="btn btn-primary" style="flex:2" onclick="savePO('terkirim')">Kirim ke Supplier</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('po-modal-overlay').dataset.editId?savePOEdit('draft'):savePO('draft')">Simpan Draft</button>
+      <button class="btn btn-primary" style="flex:2" onclick="document.getElementById('po-modal-overlay').dataset.editId?savePOEdit('terkirim'):savePO('terkirim')">Kirim ke Supplier</button>
     </div>
   </div>
 </div>
@@ -11710,8 +11710,11 @@ function renderPOList(){
   list.innerHTML = filtered.slice().reverse().map(po => {
     const total = calcPOTotal(po);
     const actions = [];
-    if(po.status==='draft')
+    if(po.status==='draft'){
+      actions.push(`<button class="btn btn-ghost btn-sm" onclick="openEditPOModal('${po.id}')">✏ Edit</button>`);
       actions.push(`<button class="btn btn-primary btn-sm" onclick="updatePOStatus('${po.id}','terkirim')">📤 Kirim ke Supplier</button>`);
+      actions.push(`<button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deletePO('${po.id}')">🗑 Hapus</button>`);
+    }
     if(po.status==='terkirim')
       actions.push(`<button class="btn btn-primary btn-sm" onclick="updatePOStatus('${po.id}','diterima')">✓ Tandai Diterima</button>`);
     if(po.status!=='diterima'&&po.status!=='dibatalkan')
@@ -11720,7 +11723,7 @@ function renderPOList(){
       <div class="po-card-head">
         <div>
           <div class="po-card-id">${po.id}</div>
-          <div class="po-card-supplier">${po.supplier}</div>
+          <div class="po-card-supplier">${po.supplier==='__lainnya__'?'Supplier Manual':po.supplier}</div>
           <div class="po-card-date">Dibuat: ${po.date}${po.deliveryDate?' · Kirim: '+po.deliveryDate:''}</div>
           ${po.notes?`<div class="po-card-date" style="margin-top:2px">📝 ${po.notes}</div>`:''}
         </div>
@@ -11860,6 +11863,89 @@ async function loadPOFromSupabase(){
   }
 }
 
+/* ── PO Edit & Delete ── */
+async function openEditPOModal(poId){
+  const po = PO_DB.find(p=>p.id===poId);
+  if(!po||po.status!=='draft'){ showToast('error','Hanya PO Draft yang bisa diedit'); return; }
+  // Populate form with existing data
+  poItems = po.items.map(i=>({name:i.name, qty:i.qty, unit:i.unit, price:i.price||0}));
+  const supSel = document.getElementById('po-supplier');
+  if(supSel){
+    if(SUPPLIERS_DB.length===0) await loadSuppliersFromSupabase();
+    supSel.innerHTML = '<option value="">Pilih supplier...</option>' +
+      SUPPLIERS_DB.filter(s=>s.is_active!==false).map(s=>
+        `<option value="${s.name}" ${s.name===po.supplier?'selected':''}>${s.name}</option>`
+      ).join('') +
+      `<option value="__lainnya__" ${po.supplier==='__lainnya__'?'selected':''}>Lainnya (ketik manual)</option>`;
+  }
+  const ddEl = document.getElementById('po-delivery-date');
+  if(ddEl) ddEl.value = po.deliveryDate || '';
+  const notesEl = document.getElementById('po-notes');
+  if(notesEl) notesEl.value = po.notes || '';
+  // Store editing PO id
+  document.getElementById('po-modal-overlay').dataset.editId = poId;
+  document.querySelector('#po-modal-overlay h3')&&(document.querySelector('#po-modal-overlay h3').textContent='Edit Purchase Order');
+  renderPOItemsList();
+  document.getElementById('po-modal-overlay').classList.add('open');
+}
+
+async function savePOEdit(status){
+  const editId = document.getElementById('po-modal-overlay').dataset.editId;
+  if(!editId){ return savePO(status); } // fallback ke create baru
+  const po = PO_DB.find(p=>p.id===editId);
+  if(!po){ showToast('error','PO tidak ditemukan'); return; }
+  const supplier = document.getElementById('po-supplier')?.value;
+  if(!supplier){ showToast('error','Supplier wajib dipilih'); return; }
+  const validItems = poItems.filter(i=>i.name&&i.qty>0);
+  if(!validItems.length){ showToast('error','Tambahkan minimal 1 item'); return; }
+  const deliveryDate = document.getElementById('po-delivery-date')?.value||null;
+  const notes = document.getElementById('po-notes')?.value.trim()||'';
+  const totalAmount = validItems.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
+  try {
+    if(po.supaId){
+      // Update Supabase purchase_orders
+      const {error:poErr} = await supa.from('purchase_orders')
+        .update({ supplier_name:supplier, delivery_date:deliveryDate||null, notes, total_amount:totalAmount, status })
+        .eq('id', po.supaId);
+      if(poErr) throw poErr;
+      // Delete old items + re-insert
+      await supa.from('purchase_order_items').delete().eq('po_id', po.supaId);
+      const itemsPayload = validItems.map(i=>{
+        const mat = MATERIALS_DB.find(m=>m.name===i.name);
+        return { po_id:po.supaId, material_id:mat?.id||null, item_name:i.name, quantity:i.qty, unit:i.unit||'kg', unit_price:i.price||0, subtotal:i.qty*(i.price||0) };
+      });
+      await supa.from('purchase_order_items').insert(itemsPayload);
+    }
+    // Update local PO_DB
+    po.supplier=supplier; po.deliveryDate=deliveryDate||''; po.notes=notes;
+    po.status=status; po.items=validItems; po.total=totalAmount;
+    lsSavePO();
+    delete document.getElementById('po-modal-overlay').dataset.editId;
+    closePOModal();
+    showToast('success','PO berhasil diperbarui', po.id);
+    logActivity('Purchase Order','Edit: '+po.id);
+    await loadPOFromSupabase();
+  } catch(e){ showToast('error','Gagal update PO: '+e.message); }
+}
+
+async function deletePO(poId){
+  const po = PO_DB.find(p=>p.id===poId);
+  if(!po){ showToast('error','PO tidak ditemukan'); return; }
+  if(po.status!=='draft'){ showToast('error','Hanya PO Draft yang bisa dihapus'); return; }
+  if(!confirm('Hapus PO '+poId+'? Aksi ini tidak bisa dibatalkan.')) return;
+  try {
+    if(po.supaId){
+      await supa.from('purchase_order_items').delete().eq('po_id', po.supaId);
+      await supa.from('purchase_orders').delete().eq('id', po.supaId);
+    }
+    PO_DB.splice(PO_DB.findIndex(p=>p.id===poId),1);
+    lsSavePO();
+    showToast('success','PO '+poId+' dihapus');
+    logActivity('Purchase Order','Hapus: '+poId);
+    renderPOList();
+  } catch(e){ showToast('error','Gagal hapus PO: '+e.message); }
+}
+
 /* ── PO Modal ── */
 function openPOModal(){
   poItems = [{name:'', qty:1, unit:'kg', price:0}];
@@ -11884,7 +11970,10 @@ function openPOModal(){
   document.getElementById('po-modal-overlay').classList.add('open');
 }
 function closePOModal(){
-  document.getElementById('po-modal-overlay').classList.remove('open');
+  const el = document.getElementById('po-modal-overlay');
+  el.classList.remove('open');
+  delete el.dataset.editId;
+  const h = el.querySelector('h3'); if(h) h.textContent='Buat Purchase Order';
 }
 function addPOItem(){
   poItems.push({name:'', qty:1, unit:'kg', price:0});
