@@ -5297,6 +5297,8 @@ function goToLauncher(){
   loadKaryawanFromSupabase();
   // Pre-load materials agar BOM editor dropdown terisi dari Supabase
   loadMaterialsFromSupabase();
+  // Load semua BOM dari Supabase agar stock deduction berjalan
+  loadAllBOMFromSupabase().catch(e => console.warn('BOM load error:', e));
   // Init tombol Input Manual sesuai role
   setTimeout(initManualSalesButton, 500);
   // Load Gemini API key dari Supabase system_config
@@ -5671,14 +5673,22 @@ function deductStock(cartItems){
     if (inv.qty < need) errors.push(`${mat}: butuh ${need.toFixed(0)}${inv.unit}, stok ${inv.qty}${inv.unit}`);
   });
   if (errors.length) return { ok:false, errors };
-  // Second pass: deduct
+  // Second pass: deduct local INV + sync to Supabase
   Object.entries(deductions).forEach(([mat, need]) => {
     const inv = INV.find(i=>i.name===mat);
     if (inv) {
       inv.qty = Math.max(0, inv.qty - need);
-      // Check alert threshold
       if (inv.qty <= inv.min) inv.status = inv.qty===0?'critical':'warning';
       else inv.status = 'safe';
+      // Sync ke Supabase inventory_stocks
+      if(inv.matId){
+        const branchId = getBranchUUID();
+        supa.from('inventory_stocks')
+          .update({ quantity: inv.qty, updated_at: new Date().toISOString() })
+          .eq('material_id', inv.matId)
+          .eq('branch_id', branchId)
+          .then(({error}) => { if(error) console.warn('Stock deduct sync error:', mat, error.message); });
+      }
     }
   });
   return { ok:true };
@@ -14056,6 +14066,43 @@ async function saveProdukToSupabase(item, isEdit){
 }
 
 // Load BOM ingredients dari Supabase product_ingredients
+async function loadAllBOMFromSupabase(){
+  // Load semua BOM dari product_ingredients sekaligus
+  try {
+    const {data, error} = await supa
+      .from('product_ingredients')
+      .select('product_id, quantity, unit, waste_pct, materials_master(name, default_unit, cost_per_unit)');
+    if(error) throw error;
+    if(!data || !data.length) return;
+    // Group by product_id (supabase UUID)
+    const grouped = {};
+    data.forEach(row => {
+      const pid = row.product_id;
+      if(!grouped[pid]) grouped[pid] = [];
+      grouped[pid].push(row);
+    });
+    // Map supabase UUID → local MENU id
+    let loaded = 0;
+    Object.entries(grouped).forEach(([supaId, rows]) => {
+      const menuItem = MENU.find(m => m.supaId === supaId);
+      if(!menuItem) return;
+      const localId = menuItem.id;
+      BOM_DATA[localId] = BOM_DATA[localId] || {yield:1,yield_unit:'cup',prep_time:3,notes:'',ingredients:[]};
+      BOM_DATA[localId].ingredients = rows.map((row,i) => ({
+        id:        'b'+supaId.slice(-4)+i,
+        material:  row.materials_master?.name || '',
+        qty:       parseFloat(row.quantity) || 0,
+        unit:      row.unit || row.materials_master?.default_unit || 'gr',
+        waste_pct: parseFloat(row.waste_pct) || 0,
+        cost_per_unit: parseFloat(row.materials_master?.cost_per_unit) || 0,
+        notes:     '',
+      }));
+      loaded++;
+    });
+    console.log('[BOM] Loaded BOM for', loaded, 'products from Supabase');
+  } catch(e){ console.warn('loadAllBOMFromSupabase error:', e.message); }
+}
+
 async function loadBOMFromSupabase(productId, supaProductId){
   try {
     const { data, error } = await supa
