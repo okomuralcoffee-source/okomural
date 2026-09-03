@@ -5341,6 +5341,10 @@ function goToLauncher(){
   loadMaterialsFromSupabase();
   // Load semua BOM dari Supabase agar stock deduction berjalan
   loadAllBOMFromSupabase().catch(e => console.warn('BOM load error:', e));
+  // Request push notification permission
+  if('Notification' in window && Notification.permission === 'default'){
+    Notification.requestPermission();
+  }
   // Init tombol Input Manual sesuai role
   setTimeout(initManualSalesButton, 500);
   // Load Gemini API key dari Supabase system_config
@@ -7937,6 +7941,17 @@ function voidSingleItem(txId, itemIdx){
    FITUR 4: NOTIFIKASI STOK KRITIS — Real Post-Checkout
 ══════════════════════════════════════════════════ */
 let _prevAlertCount = 0;
+async function sendStockNotif(itemName, qty, unit){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  new Notification('⚠️ Stok Kritis — OKOMURAL', {
+    body: itemName + ' tersisa ' + qty + ' ' + unit + '. Segera restock!',
+    icon: '/icons/logo-dark.png',
+    badge: '/icons/logo-dark.png',
+    tag: 'stock-alert-' + itemName,
+    renotify: false,
+  });
+}
+
 async function checkStockAlerts(){
   let total = 0;
   if(currentUser?.branch_id) {
@@ -7952,7 +7967,10 @@ async function checkStockAlerts(){
       total = INV.filter(i=>i.qty<=0).length + INV.filter(i=>i.qty>0&&i.qty<=i.min).length;
     }
   } else {
-    total = INV.filter(i=>i.qty<=0).length + INV.filter(i=>i.qty>0&&i.qty<=i.min).length;
+    // Kirim notif untuk item kritis
+    const kritisItems = INV.filter(i=>i.qty<=0);
+    kritisItems.forEach(i => sendStockNotif(i.name, i.qty, i.unit||''));
+    total = kritisItems.length + INV.filter(i=>i.qty>0&&i.qty<=i.min).length;
   }
   const bell  = document.getElementById('stock-alert-bell');
   const count = document.getElementById('stock-alert-count');
@@ -9947,9 +9965,11 @@ function renderBelanjaBody(){
       <div class="belanja-form-group">
         <label>Kategori</label>
         <select class="belanja-select" id="bh-kategori">
-          <option value="bahan_baku">Bahan Baku</option>
-          <option value="operasional">Operasional</option>
-          <option value="perlengkapan">Perlengkapan</option>
+          ${Object.keys(_expCatCache).length > 0
+            ? Object.entries(_expCatCache).map(([name, id]) =>
+                `<option value="${id}">${name}</option>`).join('')
+            : '<option value="09ebd1b7-33c6-45e1-9aec-b6f9e920f674">Belanja Harian</option><option value="">Operasional</option><option value="">Perlengkapan</option>'
+          }
           <option value="lainnya">Lainnya</option>
         </select>
       </div>
@@ -10040,14 +10060,8 @@ function submitPengeluaran(){
   // SUPABASE: insert expense langsung dengan category_id yang benar
   (async () => {
     try {
-      // Map kategori value ke category_id Supabase
-      const catMap = {
-        'bahan_baku':   '09ebd1b7-33c6-45e1-9aec-b6f9e920f674', // Belanja Harian
-        'operasional':  'd7be1b46-4e4f-4fea-9891-ca13e6f5a026', // Lain-lain
-        'perlengkapan': 'ac0cbf86-a78f-4a72-bc01-09cc61fd2048', // Perlengkapan
-        'lainnya':      'd7be1b46-4e4f-4fea-9891-ca13e6f5a026', // Lain-lain
-      };
-      const catId = catMap[kategori] || 'd7be1b46-4e4f-4fea-9891-ca13e6f5a026';
+      // kategori value sekarang langsung UUID dari _expCatCache
+      const catId = kategori || '09ebd1b7-33c6-45e1-9aec-b6f9e920f674';
       const desc  = nama + (catatan ? ' · ' + catatan : '');
       await supa.from('expenses').insert({
         category_id:  catId,
@@ -15431,6 +15445,13 @@ function openPricelistModal(id){
         entry.catatan   = cat;
         showToast('success', mat + ' diperbarui', sup + ' · Rp ' + harga.toLocaleString('id') + '/' + satuan);
         logActivity('Pricelist', 'Edit: ' + mat + ' @ ' + sup);
+        // Sync cost_per_unit ke materials_master Supabase
+        (async()=>{
+          const matRow = MATERIALS_DB.find(m=>m.name===mat);
+          if(matRow?.id){
+            await supa.from('materials_master').update({cost_per_unit: harga, updated_at: new Date().toISOString()}).eq('id',matRow.id);
+          }
+        })();
       } else {
         PRICELIST_DB.push({
           id: 'PL-' + Date.now(),
