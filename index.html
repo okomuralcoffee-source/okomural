@@ -8517,8 +8517,9 @@ async function confirmCheckout(){
         p_payment_method: method
       });
       if(error) {
-        // Postgres error dari RPC (stok tidak cukup, dll)
-        showToast('error', 'Checkout gagal', error.message);
+        // Postgres error dari RPC
+        console.error('[Checkout] RPC error full:', JSON.stringify(error));
+        showToast('error', 'Checkout gagal: '+error.message, JSON.stringify(error).slice(0,100));
         if(confirmBtn){ confirmBtn.disabled=false; confirmBtn.textContent='Konfirmasi Bayar'; }
         // Rollback local stock deduction
         cart.forEach(c => {
