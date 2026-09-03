@@ -7808,14 +7808,16 @@ function doSplitCheckout(person){
   if(hasSupa){
     (async () => {
       try {
-        const rpcItems = items.map(c => ({
-          product_id:       c.custom ? null : getProductUUID(c.id),
-          local_product_id: c.id || null,
-          product_name:     c.name,
-          quantity:         c.qty,
-          unit_price:       c.price,
-          hpp_per_unit:     calcHPP(c.id) || 0,
-        }));
+        const rpcItems = items.map(c => {
+          const pid = c.custom ? null : (getProductUUID(c.id) || null);
+          return {
+            product_id:   pid,          // null kalau custom/tidak ada UUID
+            product_name: c.name,
+            quantity:     c.qty,
+            unit_price:   c.price,
+            hpp_per_unit: calcHPP(c.id) || 0,
+          };
+        });
         const { data: saleId, error } = await supa.rpc('atomic_checkout', {
           p_branch_id:      getBranchUUID(),
           p_staff_id:       getStaffUUID(),
