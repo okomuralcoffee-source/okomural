@@ -4356,13 +4356,15 @@ function switchBranch(branchId){
 
   closeBranchDropdown();
   renderBranchDropdown();
-  updateBranchName();
+  syncBranchName();
   syncShiftSidebar();
   renderMenuGrid('coffee');
   syncCart();
-  checkStockAlerts();
   rebuildFinanceFromSession();
-
+  // Reload INV dari Supabase untuk cabang baru (tanpa refresh)
+  if(typeof loadInventoryFromSupabase === 'function'){
+    loadInventoryFromSupabase().then(()=>{ checkStockAlerts(); });
+  }
   showToast('success', 'Cabang: ' + activeBranch.nama, 'Data dan stok sudah diperbarui');
 }
 
