@@ -9621,7 +9621,9 @@ function openBulkModal(id){
   const _id = typeof id === 'string' ? parseInt(id) : id;
   const item = MENU.find(m => m.id === _id);
   if(!item) return;
-  if(item.stock === 0){ showToast('warning', item.name + ' habis', 'Stok tidak tersedia'); return; }
+  // Cek stok dari INV (Supabase), bukan item.stock yang mungkin tidak ter-update
+  // Hanya blok jika produk explicitly di-mark unavailable
+  if(item.available === false){ showToast('warning', item.name + ' tidak tersedia', 'Produk dinonaktifkan'); return; }
   bulkCurrentItem = item;
   // Reset to item mode
   setBulkMode('item');
@@ -9755,8 +9757,15 @@ function confirmBulkAdd(){
     if(hasSupa){
       (async () => {
         try {
+          // Gunakan branch_id dari source yang dipilih (bukan HQ default)
+          const BULK_BRANCH_MAP = {
+            'CAB-001': '11111111-0000-0000-0000-000000000001',
+            'CAB-002': '11111111-0000-0000-0000-000000000002',
+            'CAB-003': '11111111-0000-0000-0000-000000000003',
+          };
+          const bulkBranchId = BULK_BRANCH_MAP[source.id] || getBranchUUID();
           const { data: saleId, error } = await supa.rpc('atomic_checkout', {
-            p_branch_id:      getBranchUUID(),
+            p_branch_id:      bulkBranchId,
             p_staff_id:       getStaffUUID(),
             p_shift_id:       activeShift.supaId,
             p_member_id:      null,
@@ -9817,7 +9826,7 @@ function renderMenuGrid(cat='all'){
   if(bulkMode) grid.classList.add('bulk-mode');
   else grid.classList.remove('bulk-mode');
   grid.innerHTML = items.map(item => {
-    const unavailable = item.stock === 0;
+    const unavailable = item.available === false;
     const onclickFn = unavailable ? '' : bulkMode
       ? 'openBulkModal(' + item.id + ')'
       : 'addToCart(' + item.id + ')';
