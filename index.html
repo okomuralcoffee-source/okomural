@@ -13918,7 +13918,7 @@ async function loadProductsFromSupabase(){
   try {
     const { data, error } = await supa
       .from('products')
-      .select('id, name, price, is_available, description, emoji, category_id, product_categories(name)')
+      .select('id, name, price, cost_price, is_available, description, emoji, category_id, product_categories(name)')
       .order('name');
     if(error){ console.warn('[Phase4] loadProducts error:', error.message); return; }
     if(!data || data.length === 0) return;
@@ -13932,6 +13932,7 @@ async function loadProductsFromSupabase(){
         id:          localId,
         name:        row.name,
         price:       parseFloat(row.price) || 0,
+        hpp:         parseFloat(row.cost_price) || 0,
         cat:         catName,
         emoji:       row.emoji || '☕',
         stock:       row.is_available ? 10 : 0,
