@@ -3461,6 +3461,14 @@ async function hydrateUserFromSession(session) {
     <div><div class="adv-page-title">Shareholder Equity</div><div class="adv-page-sub">Ownership structure and profit distribution</div></div>
     <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openShareholderModal()">+ Tambah Pemegang</button>
   </div>
+  <!-- Tab nav -->
+  <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+    <button id="sh-tab-global" onclick="switchShTab('global')" style="padding:8px 16px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--green);color:var(--green)">🌐 Global</button>
+    <button id="sh-tab-outlet" onclick="switchShTab('outlet')" style="padding:8px 16px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text3)">🏪 Per Outlet</button>
+    <button id="sh-tab-distrib" onclick="switchShTab('distrib')" style="padding:8px 16px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text3)">💰 Profit Distribution</button>
+  </div>
+  <!-- Tab: Global -->
+  <div id="sh-panel-global">
   <div class="adv-kpi-row" id="sh-kpi-row"></div>
   <div class="adv-card" style="margin-top:14px">
     <div class="adv-card-hd">Shareholder Breakdown</div>
@@ -3475,6 +3483,34 @@ async function hydrateUserFromSession(session) {
     </div>
     <div id="sh-injection-table"></div>
   </div>
+  </div><!-- end sh-panel-global -->
+
+  <!-- Tab: Per Outlet -->
+  <div id="sh-panel-outlet" style="display:none">
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap" id="outlet-tab-btns">
+      <button onclick="selectOutletTab('11111111-0000-0000-0000-000000000001','HQ Indrapura')" id="otab-001"
+        style="padding:6px 14px;border-radius:6px;border:1px solid var(--green);background:var(--green-dim);color:var(--green);font-size:12px;font-weight:600;cursor:pointer">🏠 HQ Indrapura</button>
+      <button onclick="selectOutletTab('11111111-0000-0000-0000-000000000002','Cart #1 Sukamulya')" id="otab-002"
+        style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer">🛒 Cart #1 Sukamulya</button>
+      <button onclick="selectOutletTab('11111111-0000-0000-0000-000000000003','Cart #2 Petapahan')" id="otab-003"
+        style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer">🛒 Cart #2 Petapahan</button>
+    </div>
+    <div id="outlet-equity-panel"></div>
+  </div>
+
+  <!-- Tab: Profit Distribution -->
+  <div id="sh-panel-distrib" style="display:none">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <select id="distrib-month" class="form-select" style="min-width:120px">
+        <option value="">Bulan ini</option>
+      </select>
+      <select id="distrib-year" class="form-select" style="min-width:90px"></select>
+      <button class="btn btn-primary btn-sm" onclick="loadProfitDistribution()">📊 Hitung</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportProfitDistribution()">⬇ Export</button>
+    </div>
+    <div id="distrib-result"></div>
+  </div>
+
 </div>
 
 <!-- SHAREHOLDER MODAL -->
@@ -13069,6 +13105,365 @@ async function deleteKategori(id, name){
     logActivity('Settings','Hapus kategori pengeluaran: '+name);
     await loadKategoriPanel();
   } catch(e){ showToast('error','Gagal hapus: '+e.message); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EQUITY PER OUTLET — Weighted Equity Model
+══════════════════════════════════════════════════════════════ */
+let _currentOutletId = '11111111-0000-0000-0000-000000000001';
+let _currentOutletName = 'HQ Indrapura';
+
+function switchShTab(tab){
+  ['global','outlet','distrib'].forEach(t => {
+    const panel = document.getElementById('sh-panel-'+t);
+    const btn   = document.getElementById('sh-tab-'+t);
+    if(panel) panel.style.display = t===tab ? '' : 'none';
+    if(btn){
+      btn.style.borderBottomColor = t===tab ? 'var(--green)' : 'transparent';
+      btn.style.color = t===tab ? 'var(--green)' : 'var(--text3)';
+    }
+  });
+  if(tab==='outlet') selectOutletTab(_currentOutletId, _currentOutletName);
+  if(tab==='distrib') initDistribSelectors();
+}
+
+function selectOutletTab(branchId, branchName){
+  _currentOutletId   = branchId;
+  _currentOutletName = branchName;
+  // Update button styles
+  ['001','002','003'].forEach(n => {
+    const btn = document.getElementById('otab-'+n);
+    if(!btn) return;
+    const isActive = branchId.endsWith('-'+n.replace('0','').replace('0',''));
+    const active   = branchId.slice(-3) === n.replace('00','0');
+    btn.style.borderColor  = branchId.slice(-3) === '0'+n.slice(-2) ? 'var(--green)' : 'var(--border)';
+    btn.style.background   = branchId.slice(-3) === '0'+n.slice(-2) ? 'var(--green-dim)' : 'var(--bg2)';
+    btn.style.color        = branchId.slice(-3) === '0'+n.slice(-2) ? 'var(--green)' : 'var(--text2)';
+  });
+  // Simpler active detection
+  document.querySelectorAll('#outlet-tab-btns button').forEach(b => {
+    const onclick = b.getAttribute('onclick') || '';
+    const isThis = onclick.includes(branchId);
+    b.style.borderColor = isThis ? 'var(--green)' : 'var(--border)';
+    b.style.background  = isThis ? 'var(--green-dim)' : 'var(--bg2)';
+    b.style.color       = isThis ? 'var(--green)' : 'var(--text2)';
+  });
+  loadOutletEquity(branchId, branchName);
+}
+
+async function loadOutletEquity(branchId, branchName){
+  const panel = document.getElementById('outlet-equity-panel');
+  if(!panel) return;
+  panel.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:12px">Memuat...</div>';
+  try {
+    // Load shareholders for this outlet
+    const {data: shareholders, error} = await supa
+      .from('outlet_shareholders')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('tipe');
+    if(error) throw error;
+
+    // Load BEP config
+    const {data: bepCfg} = await supa
+      .from('outlet_bep_config')
+      .select('*')
+      .eq('branch_id', branchId)
+      .single();
+
+    const isBepFlip = bepCfg?.has_bep_flip || false;
+    const isBepReached = bepCfg?.is_bep_reached || false;
+    const bobotP = isBepReached ? (bepCfg?.bobot_pengelola_post||60) : (bepCfg?.bobot_pengelola_pre||60);
+    const bobotI = isBepReached ? (bepCfg?.bobot_investor_post||40) : (bepCfg?.bobot_investor_pre||40);
+
+    // Calculate efektif% for each shareholder
+    const withEfektif = (shareholders||[]).map(sh => {
+      const efektif = (sh.modal_pct * bobotI/100) + (sh.kelola_pct * bobotP/100);
+      return {...sh, efektif, bobotP, bobotI};
+    });
+    const totalEfektif = withEfektif.reduce((s,sh)=>s+sh.efektif,0);
+
+    panel.innerHTML = `
+      <div class="adv-card" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="adv-card-hd" style="margin:0">🏪 ${branchName}</div>
+          <button class="btn btn-primary btn-sm" onclick="openOutletShModal('${branchId}','${branchName}')">+ Tambah Pemegang</button>
+        </div>
+        <!-- Formula bobot -->
+        <div style="background:var(--bg2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+          <div style="font-weight:700;margin-bottom:6px;color:var(--text2)">Formula Weighted Equity</div>
+          <div style="color:var(--text3);font-family:monospace;font-size:11px">Efektif% = (Modal% × ${bobotI}% Bobot Investor) + (Kelola% × ${bobotP}% Bobot Pengelola)</div>
+          ${isBepFlip ? `<div style="margin-top:6px;font-size:10px;color:${isBepReached?'var(--green)':'var(--amber)'}">
+            ${isBepReached ? '✅ BEP Tercapai — bobot sudah flip ke Post-BEP' : '⏳ Pre-BEP — bobot akan flip otomatis saat BEP tercapai'}
+            ${!isBepReached ? `<button onclick="markBepReached('${branchId}')" class="btn btn-sm" style="margin-left:8px;font-size:9px;padding:2px 8px;background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,.3)">Tandai BEP Tercapai</button>` : ''}
+          </div>` : '<div style="margin-top:4px;font-size:10px;color:var(--text3)">Bobot permanen — tidak ada flip</div>'}
+        </div>
+        <!-- Shareholder table -->
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">NAMA</th>
+              <th style="text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">TIPE</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">MODAL</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">MODAL%</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">KELOLA%</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--green);font-size:10px;font-weight:700">EFEKTIF%</th>
+              <th style="padding:6px 8px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${withEfektif.map(sh=>`
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px;font-weight:600">${sh.name}</td>
+                <td style="padding:8px"><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${sh.tipe==='internal'?'var(--blue-dim)':'var(--amber-dim)'};color:${sh.tipe==='internal'?'var(--blue)':'var(--amber)'}">${sh.tipe}</span></td>
+                <td style="padding:8px;text-align:right;color:var(--text2)">${sh.modal_amount>0?'Rp '+Math.round(sh.modal_amount).toLocaleString('id'):'—'}</td>
+                <td style="padding:8px;text-align:right">${sh.modal_pct}%</td>
+                <td style="padding:8px;text-align:right">${sh.kelola_pct}%</td>
+                <td style="padding:8px;text-align:right;font-weight:700;color:var(--green)">${sh.efektif.toFixed(1)}%</td>
+                <td style="padding:8px;text-align:right">
+                  <button class="btn btn-ghost btn-sm" style="font-size:10px;margin-right:4px" onclick="editOutletSh('${sh.id}','${branchId}','${branchName}')">✏</button>
+                  <button class="btn btn-sm" style="font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteOutletSh('${sh.id}','${branchId}','${branchName}')">×</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--bg2)">
+              <td colspan="5" style="padding:8px;font-weight:700;font-size:11px">TOTAL</td>
+              <td style="padding:8px;text-align:right;font-weight:800;color:var(--green)">${totalEfektif.toFixed(1)}%</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  } catch(e){
+    panel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">Gagal load: ${e.message}</div>`;
+  }
+}
+
+async function openOutletShModal(branchId, branchName, editData=null){
+  const isEdit = !!editData;
+  openConfirm(
+    (isEdit?'Edit':'Tambah')+' Pemegang Saham — '+branchName,
+    `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+      <div><label style="font-size:11px;color:var(--text3)">Nama</label>
+        <input id="os-name" class="form-input" value="${editData?.name||''}" placeholder="Nama pemegang saham" style="width:100%;margin-top:4px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label style="font-size:11px;color:var(--text3)">Tipe</label>
+          <select id="os-tipe" class="form-select" style="width:100%;margin-top:4px">
+            <option value="internal" ${editData?.tipe==='internal'?'selected':''}>Internal</option>
+            <option value="eksternal" ${editData?.tipe==='eksternal'?'selected':''}>Eksternal</option>
+          </select></div>
+        <div><label style="font-size:11px;color:var(--text3)">Modal (Rp)</label>
+          <input id="os-modal" type="number" class="form-input" value="${editData?.modal_amount||0}" style="width:100%;margin-top:4px"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label style="font-size:11px;color:var(--text3)">Modal%</label>
+          <input id="os-modal-pct" type="number" class="form-input" value="${editData?.modal_pct||0}" min="0" max="100" style="width:100%;margin-top:4px"></div>
+        <div><label style="font-size:11px;color:var(--text3)">Kelola%</label>
+          <input id="os-kelola-pct" type="number" class="form-input" value="${editData?.kelola_pct||0}" min="0" max="100" style="width:100%;margin-top:4px"></div>
+      </div>
+      <div><label style="font-size:11px;color:var(--text3)">Catatan</label>
+        <input id="os-notes" class="form-input" value="${editData?.notes||''}" placeholder="Opsional" style="width:100%;margin-top:4px"></div>
+    </div>`,
+    isEdit ? 'Simpan' : 'Tambah',
+    async () => {
+      const payload = {
+        branch_id: branchId,
+        name:      document.getElementById('os-name')?.value.trim(),
+        tipe:      document.getElementById('os-tipe')?.value,
+        modal_amount: parseFloat(document.getElementById('os-modal')?.value)||0,
+        modal_pct:    parseFloat(document.getElementById('os-modal-pct')?.value)||0,
+        kelola_pct:   parseFloat(document.getElementById('os-kelola-pct')?.value)||0,
+        notes:        document.getElementById('os-notes')?.value.trim()||null,
+      };
+      if(!payload.name){ showToast('error','Nama wajib diisi'); return; }
+      try {
+        if(isEdit){
+          const {error} = await supa.from('outlet_shareholders').update(payload).eq('id',editData.id);
+          if(error) throw error;
+        } else {
+          const {error} = await supa.from('outlet_shareholders').insert(payload);
+          if(error) throw error;
+        }
+        showToast('success', isEdit?'Pemegang diperbarui':'Pemegang ditambahkan');
+        logActivity('Equity', (isEdit?'Edit':'Tambah')+' outlet shareholder: '+payload.name+' @ '+branchName);
+        await loadOutletEquity(branchId, branchName);
+      } catch(e){ showToast('error','Gagal: '+e.message); }
+    }
+  );
+}
+
+async function editOutletSh(id, branchId, branchName){
+  const {data} = await supa.from('outlet_shareholders').select('*').eq('id',id).single();
+  if(data) openOutletShModal(branchId, branchName, data);
+}
+
+async function deleteOutletSh(id, branchId, branchName){
+  openConfirm('Hapus pemegang saham?','Data kepemilikan ini akan dihapus.','Hapus', async()=>{
+    const {error} = await supa.from('outlet_shareholders').delete().eq('id',id);
+    if(error){ showToast('error','Gagal: '+error.message); return; }
+    showToast('success','Pemegang dihapus');
+    await loadOutletEquity(branchId, branchName);
+  });
+}
+
+async function markBepReached(branchId){
+  openConfirm('Tandai BEP Tercapai?',
+    'Bobot kepemilikan Cart #2 Petapahan akan flip: Okomural 60% / Investor 40%. Tidak bisa dibatalkan.',
+    'Konfirmasi BEP', async()=>{
+      const {error} = await supa.from('outlet_bep_config')
+        .update({is_bep_reached:true, updated_at:new Date().toISOString()})
+        .eq('branch_id', branchId);
+      if(error){ showToast('error','Gagal: '+error.message); return; }
+      // Update bobot di outlet_shareholders untuk Petapahan
+      await supa.from('outlet_shareholders')
+        .update({bobot_pengelola:60, bobot_investor:40, updated_at:new Date().toISOString()})
+        .eq('branch_id', branchId);
+      showToast('success','BEP Tercapai! Bobot sudah flip ke Post-BEP 🎉');
+      logActivity('Equity','BEP tercapai — Petapahan bobot flip ke Okomural 60%/Investor 40%');
+      await loadOutletEquity(branchId, 'Cart #2 Petapahan');
+    });
+}
+
+/* ── Profit Distribution ── */
+function initDistribSelectors(){
+  const mSel = document.getElementById('distrib-month');
+  const ySel = document.getElementById('distrib-year');
+  if(!mSel||!ySel) return;
+  const now = new Date();
+  const MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  mSel.innerHTML = MONTHS.map((m,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${m}</option>`).join('');
+  ySel.innerHTML = [2025,2026,2027].map(y=>`<option value="${y}" ${y===now.getFullYear()?'selected':''}>${y}</option>`).join('');
+}
+
+async function loadProfitDistribution(){
+  const panel = document.getElementById('distrib-result');
+  if(!panel) return;
+  const month = document.getElementById('distrib-month')?.value;
+  const year  = document.getElementById('distrib-year')?.value;
+  panel.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:12px">Menghitung distribusi profit...</div>';
+
+  try {
+    const from = `${year}-${String(month).padStart(2,'0')}-01T00:00:00Z`;
+    const to   = new Date(parseInt(year), parseInt(month), 0);
+    const toStr = to.toISOString().slice(0,10)+'T23:59:59Z';
+
+    // Load sales per branch
+    const {data: sales} = await supa.from('sales')
+      .select('branch_id, total_amount, payment_status')
+      .eq('payment_status','paid')
+      .gte('created_at', from)
+      .lte('created_at', toStr);
+
+    // Load expenses per branch
+    const {data: expenses} = await supa.from('expenses')
+      .select('branch_id, amount')
+      .gte('expense_date', from.slice(0,10))
+      .lte('expense_date', toStr.slice(0,10));
+
+    // Load all outlet shareholders
+    const {data: allSh} = await supa.from('outlet_shareholders').select('*');
+    const {data: allBep} = await supa.from('outlet_bep_config').select('*');
+
+    const BRANCHES = [
+      {id:'11111111-0000-0000-0000-000000000001', name:'HQ Indrapura'},
+      {id:'11111111-0000-0000-0000-000000000002', name:'Cart #1 Sukamulya'},
+      {id:'11111111-0000-0000-0000-000000000003', name:'Cart #2 Petapahan'},
+    ];
+
+    let rows = [];
+    let grandTotal = {omzet:0, biaya:0, profit:0};
+
+    BRANCHES.forEach(branch => {
+      const omzet  = (sales||[]).filter(s=>s.branch_id===branch.id).reduce((s,t)=>s+parseFloat(t.total_amount||0),0);
+      const biaya  = (expenses||[]).filter(e=>e.branch_id===branch.id).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+      const profit = omzet - biaya;
+      grandTotal.omzet  += omzet;
+      grandTotal.biaya  += biaya;
+      grandTotal.profit += profit;
+
+      const bepCfg = (allBep||[]).find(b=>b.branch_id===branch.id);
+      const isFlip = bepCfg?.has_bep_flip && bepCfg?.is_bep_reached;
+      const bobotP = isFlip ? (bepCfg?.bobot_pengelola_post||60) : (bepCfg?.bobot_pengelola_pre||60);
+      const bobotI = isFlip ? (bepCfg?.bobot_investor_post||40)  : (bepCfg?.bobot_investor_pre||40);
+
+      const shareholders = (allSh||[]).filter(s=>s.branch_id===branch.id);
+      shareholders.forEach(sh => {
+        const efektif = (sh.modal_pct * bobotI/100) + (sh.kelola_pct * bobotP/100);
+        const share   = profit * efektif/100;
+        rows.push({branch:branch.name, name:sh.name, omzet, biaya, profit, efektif, share, tipe:sh.tipe});
+      });
+    });
+
+    const rp = v => 'Rp '+Math.round(v).toLocaleString('id');
+    const MONTHS_ID = ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    panel.innerHTML = `
+      <div class="adv-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="adv-card-hd" style="margin:0">Profit Distribution — ${MONTHS_ID[parseInt(month)]} ${year}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+          <div style="background:var(--bg2);border-radius:8px;padding:12px">
+            <div style="font-size:10px;color:var(--text3);font-weight:700">TOTAL OMZET</div>
+            <div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">${rp(grandTotal.omzet)}</div>
+          </div>
+          <div style="background:var(--bg2);border-radius:8px;padding:12px">
+            <div style="font-size:10px;color:var(--text3);font-weight:700">TOTAL BIAYA</div>
+            <div style="font-size:16px;font-weight:800;color:var(--red);margin-top:4px">${rp(grandTotal.biaya)}</div>
+          </div>
+          <div style="background:var(--green-dim);border:1px solid rgba(29,158,117,.2);border-radius:8px;padding:12px">
+            <div style="font-size:10px;color:var(--green);font-weight:700">NET PROFIT</div>
+            <div style="font-size:16px;font-weight:800;color:var(--green);margin-top:4px">${rp(grandTotal.profit)}</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="distrib-table">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border)">
+              <th style="text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">NAMA</th>
+              <th style="text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">CABANG</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">OMZET</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">BIAYA</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">NET PROFIT</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--text3);font-size:10px;font-weight:700">EFEKTIF%</th>
+              <th style="text-align:right;padding:6px 8px;color:var(--green);font-size:10px;font-weight:700">PROFIT SHARE</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r=>`
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px;font-weight:600">${r.name}</td>
+                <td style="padding:8px;font-size:11px;color:var(--text2)">${r.branch}</td>
+                <td style="padding:8px;text-align:right;color:var(--text2)">${rp(r.omzet)}</td>
+                <td style="padding:8px;text-align:right;color:var(--red)">${rp(r.biaya)}</td>
+                <td style="padding:8px;text-align:right">${rp(r.profit)}</td>
+                <td style="padding:8px;text-align:right">${r.efektif.toFixed(1)}%</td>
+                <td style="padding:8px;text-align:right;font-weight:700;color:${r.share>=0?'var(--green)':'var(--red)'}">${rp(r.share)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:12px;font-size:10px;color:var(--text3)">
+          * Formula Opsi B (aktif): Net Profit = Omzet − Direct Expense Cabang. COGS akan ditambahkan otomatis saat BOM produk lengkap.
+        </div>
+      </div>`;
+  } catch(e){
+    panel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">Gagal: ${e.message}</div>`;
+  }
+}
+
+function exportProfitDistribution(){
+  const table = document.getElementById('distrib-table');
+  if(!table){ showToast('warning','Hitung distribusi dulu'); return; }
+  // Export ke CSV
+  const rows = [...table.querySelectorAll('tr')].map(tr =>
+    [...tr.querySelectorAll('th,td')].map(td=>'"'+td.textContent.trim().replace(/"/g,'""')+'"').join(',')
+  );
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'profit_distribution.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('success','Export berhasil');
 }
 
 function openResetSalesModal(){
