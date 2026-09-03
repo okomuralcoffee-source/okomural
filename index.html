@@ -12423,6 +12423,7 @@ function renderCapexLogs(){
       <td style="font-weight:600">${rp(c.nilai)}</td>
       <td style="color:var(--text3)">${rp(bookVal)}</td>
       <td>
+        <button class="btn btn-ghost btn-sm" onclick="openEditCapexModal('${c.id}')" style="margin-right:4px">✏</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCapex('${c.id}')">×</button>
       </td>
     </tr>`;
@@ -12435,9 +12436,15 @@ function openCapexModal(){
   if(inp && !inp.value) inp.value = new Date().toISOString().slice(0,10);
 }
 function closeCapexModal(){
+  const modal = document.getElementById('capex-modal-overlay');
+  if(modal){ delete modal.dataset.editId; const h=modal.querySelector('h3'); if(h) h.textContent='Tambah CAPEX Baru'; }
   document.getElementById('capex-modal-overlay').classList.remove('open');
 }
 function saveCapex(){
+  // Check if in edit mode
+  const _modal = document.getElementById('capex-modal-overlay');
+  const _editId = _modal?.dataset.editId;
+  if(_editId){ delete _modal.dataset.editId; saveEditCapex(_editId); return; }
   const get = id => document.getElementById(id)?.value.trim() || '';
   const nama = get('cx-nama'), kategori = get('cx-kategori'),
         nilai = parseFloat(get('cx-nilai'))||0, tanggal = get('cx-tanggal'),
@@ -12475,6 +12482,62 @@ function saveCapex(){
     } catch(e){ console.warn('CAPEX save error:',e.message); }
   })();
 }
+function openEditCapexModal(id){
+  const cx = CAPEX_DB.find(c=>c.id===id);
+  if(!cx) return;
+  // Reuse add modal, pre-fill data
+  openAddCapexModal();
+  setTimeout(()=>{
+    const setV = (elId, val) => { const e = document.getElementById(elId); if(e) e.value = val||''; };
+    setV('cx-nama',     cx.nama);
+    setV('cx-kategori', cx.kategori);
+    setV('cx-nilai',    cx.nilai);
+    setV('cx-tanggal',  cx.tanggal);
+    setV('cx-umur',     cx.umur||5);
+    setV('cx-cabang',   cx.cabang||'');
+    setV('cx-ket',      cx.keterangan||cx.notes||'');
+    // Mark as edit mode
+    const modal = document.getElementById('capex-modal-overlay');
+    if(modal){
+      modal.dataset.editId = id;
+      const h = modal.querySelector('h3');
+      if(h) h.textContent = 'Edit Aset CAPEX';
+    }
+  }, 100);
+}
+
+async function saveEditCapex(id){
+  const cx = CAPEX_DB.find(c=>c.id===id);
+  if(!cx) return;
+  const nama     = document.getElementById('cx-nama')?.value.trim();
+  const kategori = document.getElementById('cx-kategori')?.value;
+  const nilai    = parseFloat(document.getElementById('cx-nilai')?.value)||0;
+  const tanggal  = document.getElementById('cx-tanggal')?.value;
+  const umur     = parseInt(document.getElementById('cx-umur')?.value)||5;
+  const cabang   = document.getElementById('cx-cabang')?.value.trim();
+  const ket      = document.getElementById('cx-ket')?.value.trim();
+  if(!nama){ showToast('error','Nama aset wajib diisi'); return; }
+  if(!tanggal){ showToast('error','Tanggal wajib diisi'); return; }
+  // Update local
+  cx.nama = nama; cx.kategori = kategori; cx.nilai = nilai;
+  cx.tanggal = tanggal; cx.umur = umur; cx.cabang = cabang;
+  cx.keterangan = ket;
+  saveCAPEX();
+  closeCapexModal();
+  renderCapexLogs();
+  showToast('success','Aset diperbarui', nama);
+  // Sync ke Supabase
+  if(cx.supaId){
+    supa.from('capex_logs').update({
+      name: nama, category: kategori, value: nilai,
+      purchase_date: tanggal, useful_life: umur,
+      branch_name: cabang||null, notes: ket||null,
+    }).eq('id', cx.supaId)
+    .then(({error})=>{ if(error) console.warn('CAPEX edit sync:',error.message); });
+  }
+  logActivity('CAPEX','Edit: '+id+' · '+nama);
+}
+
 function deleteCapex(id){
   openConfirm('Hapus CAPEX ini?','Data tidak bisa dikembalikan.','Hapus',()=>{
     const cx = CAPEX_DB.find(c=>c.id===id);
