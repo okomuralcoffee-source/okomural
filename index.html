@@ -11647,18 +11647,22 @@ function getSalesFiltered(){
     txList = txList.filter(t => (t.method||t.payment||'').toLowerCase() === method);
   }
   // Apply filters
+  const toLocalDate = t => {
+    const d = new Date(t.createdAt || t.time || Date.now());
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  };
+  if(fromVal) txList = txList.filter(t => toLocalDate(t) >= fromVal);
+  if(toVal)   txList = txList.filter(t => toLocalDate(t) <= toVal);
+  if(method !== 'all') txList = txList.filter(t => (t.method||'cash').toLowerCase() === method);
   if(branchF !== 'all'){
     txList = txList.filter(t => {
-      const bn = (t.branchName||t.sourceName||'').toLowerCase();
-      const bid = (t.branchId||t.source||'').toLowerCase();
-      return bn.includes(branchF.toLowerCase()) || bid.includes(branchF.toLowerCase());
+      // Match by branchName (partial) atau branchId
+      const bn  = (t.branchName || t.sourceName || 'HQ Indrapura').toLowerCase();
+      const bid = (t.branchId   || t.source     || '').toLowerCase();
+      const f   = branchF.toLowerCase();
+      return bn.includes(f) || bid.includes(f);
     });
   }
-  if(method !== 'all'){
-    txList = txList.filter(t => (t.method||'').toLowerCase() === method);
-  }
-  if(fromVal){ txList = txList.filter(t => (t.createdAt||t.time||'') >= fromVal); }
-  if(toVal){   txList = txList.filter(t => (t.createdAt||t.time||'') <= toVal+'T23:59:59'); }
   return txList.sort((a,b) => new Date(b.createdAt||b.time||0) - new Date(a.createdAt||a.time||0));
 }
 function renderSalesTracking(){
@@ -11763,6 +11767,39 @@ function renderSalesTracking(){
     }
   }
 
+  // ── Revenue per Cabang ──
+  const bbEl = document.getElementById('st-branch-breakdown');
+  if(bbEl){
+    const branchMap = {};
+    txList.forEach(t => {
+      const bn = t.branchName || t.sourceName || 'HQ Indrapura';
+      if(!branchMap[bn]) branchMap[bn] = {rev:0, count:0};
+      branchMap[bn].rev   += (t.total||0);
+      branchMap[bn].count += 1;
+    });
+    const totalRev = txList.reduce((s,t)=>s+(t.total||0),0);
+    const entries  = Object.entries(branchMap).sort((a,b)=>b[1].rev-a[1].rev);
+    const BRANCH_COLORS = {
+      'HQ Indrapura':'var(--green)',
+      'Cart #1 Sukamulya':'var(--blue)',
+      'Cart #2 Petapahan':'var(--amber)',
+    };
+    bbEl.innerHTML = entries.length ? entries.map(([name,d])=>`
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+          <span style="font-weight:600;color:var(--text)">${name}</span>
+          <span style="color:${BRANCH_COLORS[name]||'var(--green)'};font-weight:700">Rp ${Math.round(d.rev).toLocaleString('id')}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;background:var(--bg2);border-radius:3px;height:6px;overflow:hidden">
+            <div style="height:100%;background:${BRANCH_COLORS[name]||'var(--green)'};border-radius:3px;width:${totalRev>0?Math.round(d.rev/totalRev*100):0}%"></div>
+          </div>
+          <span style="font-size:10px;color:var(--text3);min-width:35px;text-align:right">${d.count}tx</span>
+        </div>
+      </div>`).join('')
+    : '<div style="font-size:11px;color:var(--text3);text-align:center;padding:12px">Belum ada data</div>';
+  }
+
   // ── Tren Harian Chart ──
   renderSalesTrendChart(txList);
 }
@@ -11772,10 +11809,18 @@ function renderSalesTrendChart(txList){
   const emptyEl = document.getElementById('st-trend-empty');
   if(!canvas) return;
 
-  // Group by date
+  // Group by date (timezone-safe)
   const byDate = {};
   txList.forEach(t => {
-    const d = (t.createdAt||t.time||'').slice(0,10);
+    let d = '';
+    if(t.createdAt && t.createdAt.length > 10) {
+      const dt = new Date(t.createdAt);
+      d = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    } else if(t.createdAt && t.createdAt.length === 10) {
+      d = t.createdAt;
+    } else {
+      d = new Date().toISOString().slice(0,10); // fallback hari ini
+    }
     if(d) byDate[d] = (byDate[d]||0) + (t.total||0);
   });
   const dates = Object.keys(byDate).sort();
