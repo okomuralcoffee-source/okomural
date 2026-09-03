@@ -12486,7 +12486,7 @@ function openEditCapexModal(id){
   const cx = CAPEX_DB.find(c=>c.id===id);
   if(!cx) return;
   // Reuse add modal, pre-fill data
-  openAddCapexModal();
+  openCapexModal();
   setTimeout(()=>{
     const setV = (elId, val) => { const e = document.getElementById(elId); if(e) e.value = val||''; };
     setV('cx-nama',     cx.nama);
