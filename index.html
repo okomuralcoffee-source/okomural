@@ -9630,8 +9630,7 @@ function updateBulkTotalPreview(){
 function openBulkModal(id){
   const _id = typeof id === 'string' ? parseInt(id) : id;
   const item = MENU.find(m => m.id === _id);
-  if(!item) return;
-  // Cek stok dari INV (Supabase), bukan item.stock yang mungkin tidak ter-update
+  if(!item){ console.warn('[Bulk] item not found for id:', id, '_id:', _id, 'MENU ids:', MENU.map(m=>m.id).slice(0,5)); showToast('error','Produk tidak ditemukan','ID: '+id); return; }
   // Hanya blok jika produk explicitly di-mark unavailable
   if(item.available === false){ showToast('warning', item.name + ' tidak tersedia', 'Produk dinonaktifkan'); return; }
   bulkCurrentItem = item;
