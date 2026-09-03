@@ -3604,9 +3604,9 @@ async function hydrateUserFromSession(session) {
     <input type="date" id="st-date-to" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)">
     <select id="st-branch-filter" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)" style="min-width:155px">
       <option value="all">🏪 Semua Cabang</option>
-      <option value="HQ">🏠 HQ Indrapura</option>
-      <option value="Sukamulya">🛒 Cart #1 Sukamulya</option>
-      <option value="Petapahan">🛒 Cart #2 Petapahan</option>
+      <option value="11111111-0000-0000-0000-000000000001">🏠 HQ Indrapura</option>
+      <option value="11111111-0000-0000-0000-000000000002">🛒 Cart #1 Sukamulya</option>
+      <option value="11111111-0000-0000-0000-000000000003">🛒 Cart #2 Petapahan</option>
     </select>
     <select id="st-method-filter" class="st-date-input" onchange="loadSupabaseSalesForTracking().then(renderSalesTracking)">
       <option value="all">Semua Metode</option>
@@ -4339,7 +4339,10 @@ function initActiveBranch(){
 
 function switchBranch(branchId){
   if(activeBranch?.id === branchId) {
+    // Even if same branch, still update display
     closeBranchDropdown();
+    syncBranchName();
+    renderBranchDropdown();
     return;
   }
   // Save data cabang sekarang
@@ -11659,11 +11662,9 @@ function getSalesFiltered(){
   if(method !== 'all') txList = txList.filter(t => (t.method||'cash').toLowerCase() === method);
   if(branchF !== 'all'){
     txList = txList.filter(t => {
-      // Match by branchName (partial) atau branchId
-      const bn  = (t.branchName || t.sourceName || 'HQ Indrapura').toLowerCase();
-      const bid = (t.branchId   || t.source     || '').toLowerCase();
-      const f   = branchF.toLowerCase();
-      return bn.includes(f) || bid.includes(f);
+      // Match by UUID langsung (paling reliable)
+      const bid = t.branchId || t.source || '';
+      return bid === branchF;
     });
   }
   return txList.sort((a,b) => new Date(b.createdAt||b.time||0) - new Date(a.createdAt||a.time||0));
@@ -13301,7 +13302,7 @@ async function loadSupabaseSalesForTracking(){
 
     const {data, error} = await supa
       .from('sales')
-      .select('id, created_at, total_amount, discount_amount, payment_method, payment_status, notes, staff_id, branch_id, employees(name), sale_items(product_name, quantity, unit_price)')
+      .select('id, created_at, total_amount, discount_amount, payment_method, payment_status, notes, staff_id, branch_id, employees!sales_staff_id_fkey(name), sale_items(product_name, quantity, unit_price)')
       .eq('payment_status','paid')
       .gte('created_at', from+'T00:00:00')
       .lte('created_at', to+'T23:59:59')
