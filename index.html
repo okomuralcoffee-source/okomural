@@ -9912,7 +9912,11 @@ function renderMenuGrid(cat='all'){
 ══════════════════════════════════════════════════ */
 let BELANJA_LOG = [];        // combined log: pengeluaran + restock
 let belanjaTab = 'pengeluaran';
-function openBelanjaPanel(){
+async function openBelanjaPanel(){
+  // Load expense categories dulu biar dropdown sinkron
+  if(Object.keys(_expCatCache).length === 0){
+    await loadExpenseCategoryCache();
+  }
   renderBelanjaBody();
   document.getElementById('belanja-overlay').classList.add('open');
 }
