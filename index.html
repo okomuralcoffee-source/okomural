@@ -5339,10 +5339,12 @@ function goToLauncher(){
   loadMaterialsFromSupabase();
   // Load semua BOM dari Supabase agar stock deduction berjalan
   loadAllBOMFromSupabase().catch(e => console.warn('BOM load error:', e));
-  // Load data dari Supabase (modifier, kupon, loyalty)
+  // Load data dari Supabase (modifier, kupon, loyalty, system config)
   loadToppingDB().catch(()=>{});
   loadKuponDB().catch(()=>{});
   loadLoyaltyConfig().catch(()=>{});
+  loadSystemConfigFromSupabase().catch(()=>{});
+  loadProductModifiersFromSupabase().catch(()=>{});
   // Request push notification permission
   if('Notification' in window && Notification.permission === 'default'){
     Notification.requestPermission();
@@ -10386,43 +10388,106 @@ async function loadToppingDB(){
   } catch(e){ console.warn('[Modifiers] load error:', e.message); }
 }
 /* ── Product Modifier Config ── */
-// productModifiers[productId] = { largeEnabled, largePriceAdd, specificToppingIds[] }
-let productModifiers = {
-  1: { largeEnabled: true,  largePriceAdd: 5000, specificToppingIds: ['T06'] }, // Es Kopi Susu
-  2: { largeEnabled: true,  largePriceAdd: 4000, specificToppingIds: [] },      // Americano
-  3: { largeEnabled: true,  largePriceAdd: 5000, specificToppingIds: ['T06'] }, // Cappuccino
-  4: { largeEnabled: true,  largePriceAdd: 5000, specificToppingIds: [] },      // Cold Brew
-  5: { largeEnabled: true,  largePriceAdd: 5000, specificToppingIds: ['T06'] }, // Latte
-  6: { largeEnabled: false, largePriceAdd: 0,    specificToppingIds: ['T07'] }, // Matcha Latte
-  7: { largeEnabled: true,  largePriceAdd: 3000, specificToppingIds: [] },      // Teh Tarik
-  8: { largeEnabled: false, largePriceAdd: 0,    specificToppingIds: [] },      // Cokelat Panas
-  9: { largeEnabled: false, largePriceAdd: 0,    specificToppingIds: [] },      // Croissant
-  10:{ largeEnabled: false, largePriceAdd: 0,    specificToppingIds: [] },      // Banana Bread
-  11:{ largeEnabled: false, largePriceAdd: 0,    specificToppingIds: [] },      // Avocado Toast
-  12:{ largeEnabled: false, largePriceAdd: 0,    specificToppingIds: [] },      // Cheesecake
-};
+// productModifiers[supabaseProductId] = { largeEnabled, largePriceAdd, specificToppingIds[], modifierIds[] }
+// Keyed by product UUID (Supabase), loaded from product_modifiers table
+let productModifiers = {};
+
+// Load all product_modifiers from Supabase into productModifiers map
+async function loadProductModifiersFromSupabase(){
+  try {
+    const { data, error } = await supa.from('product_modifiers')
+      .select('product_id, modifier_id');
+    if (error) throw error;
+    // Reset map
+    productModifiers = {};
+    (data || []).forEach(row => {
+      if (!productModifiers[row.product_id]) {
+        productModifiers[row.product_id] = {
+          largeEnabled: false, largePriceAdd: 0,
+          specificToppingIds: [], modifierIds: []
+        };
+      }
+      productModifiers[row.product_id].modifierIds.push(row.modifier_id);
+    });
+    // Also load large/price config from system_config key 'product_mod_config'
+    const { data: cfgRow } = await supa.from('system_config')
+      .select('value').eq('key','product_mod_config').maybeSingle();
+    if (cfgRow) {
+      try {
+        const cfg = typeof cfgRow.value === 'object' ? cfgRow.value : JSON.parse(cfgRow.value);
+        Object.entries(cfg).forEach(([pid, v]) => {
+          if (!productModifiers[pid]) productModifiers[pid] = { largeEnabled:false, largePriceAdd:0, specificToppingIds:[], modifierIds:[] };
+          productModifiers[pid].largeEnabled  = v.largeEnabled  ?? false;
+          productModifiers[pid].largePriceAdd = v.largePriceAdd ?? 0;
+        });
+      } catch(e){ console.warn('[ProductMod] config parse error:', e.message); }
+    }
+    console.log('[ProductMod] Loaded:', Object.keys(productModifiers).length, 'products');
+  } catch(e){ console.warn('[ProductMod] load error:', e.message); }
+}
+
+// Save productModifier for one product to Supabase
+async function saveProductModifierToSupabase(productId, config){
+  try {
+    // 1. Delete old rows for this product
+    const { error: delErr } = await supa.from('product_modifiers')
+      .delete().eq('product_id', productId);
+    if (delErr) throw delErr;
+
+    // 2. Insert new modifier rows
+    const modIds = config.modifierIds || [];
+    if (modIds.length > 0) {
+      const rows = modIds.map(mid => ({ product_id: productId, modifier_id: mid }));
+      const { error: insErr } = await supa.from('product_modifiers').insert(rows);
+      if (insErr) throw insErr;
+    }
+
+    // 3. Save large/price config to system_config as JSON blob
+    // Load existing blob first to merge
+    const { data: cfgRow } = await supa.from('system_config')
+      .select('value').eq('key','product_mod_config').maybeSingle();
+    let cfg = {};
+    try { cfg = cfgRow ? (typeof cfgRow.value === 'object' ? cfgRow.value : JSON.parse(cfgRow.value)) : {}; } catch(e){}
+    cfg[productId] = { largeEnabled: config.largeEnabled, largePriceAdd: config.largePriceAdd };
+    await supa.from('system_config').upsert(
+      { key: 'product_mod_config', value: cfg },
+      { onConflict: 'key' }
+    );
+    console.log('[ProductMod] Saved product:', productId);
+  } catch(e){ console.warn('[ProductMod] save error:', e.message); }
+}
 /* ── POS: Selected state for current modifier session ── */
 let modCurrentItem = null;
 let modSelectedSize = 'regular'; // 'regular' | 'large'
 let modSelectedToppings = [];    // array of topping ids
-function getAvailableToppings(productId){
+function _resolveProductKey(productId){
+  // Try UUID key first (Supabase), fallback to integer local id
+  if (productModifiers[productId] !== undefined) return productId;
   const pid = typeof productId === 'string' ? parseInt(productId) : productId;
-  const item = MENU.find(m => m.id === pid);
-  const config = productModifiers[pid] || {};
-  // Food items only get toppings if explicitly configured
-  // Don't auto-apply coffee/drink toppings to food
+  if (productModifiers[pid] !== undefined) return pid;
+  // Try matching via MENU supaId
+  const menuItem = MENU.find(m => m.id === pid || m.supaId === productId);
+  if (menuItem) {
+    if (menuItem.supaId && productModifiers[menuItem.supaId] !== undefined) return menuItem.supaId;
+    if (productModifiers[menuItem.id] !== undefined) return menuItem.id;
+  }
+  return pid; // fallback
+}
+function getAvailableToppings(productId){
+  const key = _resolveProductKey(productId);
+  const pid = typeof productId === 'string' ? parseInt(productId) : productId;
+  const item = MENU.find(m => m.id === pid || m.supaId === productId);
+  const config = productModifiers[key] || {};
   const isFood = item && item.cat === 'food';
-  const globals = isFood
-    ? [] // food: no auto global toppings
-    : TOPPING_DB.filter(t => t.type === 'global');
+  const globals = isFood ? [] : TOPPING_DB.filter(t => t.type === 'global');
   const specific = TOPPING_DB.filter(t =>
     t.type === 'specific' && (config.specificToppingIds || []).includes(t.id)
   );
   return [...globals, ...specific];
 }
 function getProductModifier(productId){
-  const pid = typeof productId === 'string' ? parseInt(productId) : productId;
-  return productModifiers[pid] || { largeEnabled: false, largePriceAdd: 0, specificToppingIds: [] };
+  const key = _resolveProductKey(productId);
+  return productModifiers[key] || { largeEnabled: false, largePriceAdd: 0, specificToppingIds: [], modifierIds: [] };
 }
 /* ── POS: Open modifier sheet ── */
 function openModifierSheet(id){
@@ -10693,9 +10758,11 @@ function renderModifierContent(){
   } else {
     // Per product view
     el.innerHTML = MENU.map(item => {
-      const config = getProductModifier(item.id);
-      const toppings = getAvailableToppings(item.id);
+      const pid = item.supaId || item.id;
+      const config = getProductModifier(pid);
+      const toppings = getAvailableToppings(pid);
       const sizeLabel = config.largeEnabled ? `Large +Rp ${config.largePriceAdd.toLocaleString('id')}` : 'Hanya Regular';
+      const modCount = (config.modifierIds||[]).length || toppings.length;
       return `
         <div class="topping-master-card" style="flex-wrap:wrap;gap:8px">
           <div style="font-size:20px;width:36px;text-align:center">${item.emoji}</div>
@@ -10703,10 +10770,10 @@ function renderModifierContent(){
             <div style="font-size:12px;font-weight:600">${item.name}</div>
             <div style="font-size:10px;color:var(--text3);margin-top:2px">
               📐 ${sizeLabel} ·
-              🧂 ${toppings.length} topping
+              🧂 ${modCount} modifier
             </div>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="openProductModifierModal(${item.id})">Atur Modifier</button>
+          <button class="btn btn-secondary btn-sm" onclick="openProductModifierModal('${pid}')">Atur Modifier</button>
         </div>`;
     }).join('');
   }
@@ -10763,7 +10830,10 @@ function deleteTopping(id){
 }
 function openProductModifierModal(productId){
   editingProductModifierId = productId;
-  const item = MENU.find(m => m.id === productId);
+  const pid = typeof productId === 'string' && productId.includes('-')
+    ? productId  // UUID
+    : (parseInt(productId)||productId);
+  const item = MENU.find(m => m.supaId === productId || m.id === pid);
   const config = getProductModifier(productId);
   document.getElementById('pm-title').textContent = 'Modifier: ' + (item ? item.name : '');
   document.getElementById('pm-subtitle').textContent = item ? item.emoji + ' ' + item.name : '';
@@ -10797,24 +10867,27 @@ function closeProductModifierModal(){
   document.getElementById('product-modifier-overlay').classList.remove('open');
   editingProductModifierId = null;
 }
-function saveProductModifier(){
+async function saveProductModifier(){
   const productId = editingProductModifierId;
   if(!productId) return;
   const largeEnabled = document.getElementById('pm-large-enabled').checked;
   const largePriceAdd = parseInt(document.getElementById('pm-large-price').value) || 0;
-  const specificToppings = TOPPING_DB.filter(t => t.type === 'specific');
-  const selectedSpecific = specificToppings
+  // Collect selected modifier IDs (both global and specific checkboxes)
+  const selectedModIds = TOPPING_DB
     .filter(t => document.getElementById('pmt-' + t.id)?.checked)
+    .map(t => t.supaId || t.id);
+  // For backward compat, also track specificToppingIds (local id subset)
+  const specificToppingIds = TOPPING_DB
+    .filter(t => t.type === 'specific' && document.getElementById('pmt-' + t.id)?.checked)
     .map(t => t.id);
-  productModifiers[productId] = {
-    largeEnabled,
-    largePriceAdd,
-    specificToppingIds: selectedSpecific
-  };
+  const config = { largeEnabled, largePriceAdd, specificToppingIds, modifierIds: selectedModIds };
+  productModifiers[productId] = config;
   closeProductModifierModal();
   renderModifierContent();
-  const item = MENU.find(m => m.id === productId);
+  const item = MENU.find(m => m.supaId === productId || m.id === productId);
   showToast('success','Modifier disimpan', item ? item.name : '');
+  // Persist ke Supabase (async, non-blocking)
+  await saveProductModifierToSupabase(productId, config);
 }
 /* ── Patch renderMenuMgmt: add Modifier button per card ── */
 const _origRenderMenuMgmt = renderMenuMgmt;
@@ -11293,6 +11366,19 @@ STRUK = {
 };
 function saveSTRUK(){
   localStorage.setItem('oko_struk', JSON.stringify(STRUK));
+  // Sync ke Supabase system_config (fire-and-forget)
+  const upserts = [
+    { key: 'struk_alamat',     value: JSON.stringify(STRUK.alamat    || '') },
+    { key: 'struk_footer',     value: JSON.stringify(STRUK.footer    || '') },
+    { key: 'struk_telepon',    value: JSON.stringify(STRUK.telepon   || '') },
+    { key: 'struk_wifi',       value: JSON.stringify(STRUK.wifi      || '') },
+    { key: 'struk_instagram',  value: JSON.stringify(STRUK.instagram || '') },
+    { key: 'struk_twitter',    value: JSON.stringify(STRUK.twitter   || '') },
+    { key: 'struk_auto_print', value: JSON.stringify(STRUK_CONFIG.autoPrint || false) },
+  ];
+  supa.from('system_config').upsert(upserts, { onConflict: 'key' })
+    .then(() => console.log('[STRUK] Synced to Supabase'))
+    .catch(e => console.warn('[STRUK] Supabase sync error:', e.message));
 }
 function applyBranding(){
   // Update all brand name elements
@@ -16006,8 +16092,34 @@ async function loadSalesAggregateFromSupabase(dateFrom, dateTo){
    PHASE 8 — SETTINGS
    Branches + system_config + User Management → Supabase
 ══════════════════════════════════════════════════════════════════════════════ */
-// Load system_config → merge ke STRUK_CONFIG & loyalty settings
-async function loadSystemConfigFromSupabase(){ return; }
+// Load system_config → merge ke STRUK_CONFIG & loyalty settings & STRUK
+async function loadSystemConfigFromSupabase(){
+  try {
+    const { data } = await supa.from('system_config')
+      .select('key,value')
+      .in('key', [
+        'loyalty_points_per_idr','loyalty_points_to_idr','loyalty_min_redeem',
+        'struk_nama_toko','struk_alamat','struk_footer','struk_auto_print',
+        'struk_telepon','struk_wifi','struk_instagram','struk_twitter'
+      ]);
+    if (!data) return;
+    data.forEach(r => {
+      const v = r.value;
+      if (r.key === 'loyalty_points_per_idr') LOYALTY_CONFIG.pointsPerIdr = parseInt(v)||1000;
+      if (r.key === 'loyalty_points_to_idr')  LOYALTY_CONFIG.pointsToIdr  = parseInt(v)||100;
+      if (r.key === 'loyalty_min_redeem')      LOYALTY_CONFIG.minRedeem    = parseInt(v)||500;
+      if (r.key === 'struk_nama_toko')  STRUK_CONFIG.storeName = v;
+      if (r.key === 'struk_alamat')     STRUK.alamat    = v;
+      if (r.key === 'struk_footer')     STRUK.footer    = v;
+      if (r.key === 'struk_auto_print') STRUK_CONFIG.autoPrint = (v === true || v === 'true');
+      if (r.key === 'struk_telepon')    STRUK.telepon   = v;
+      if (r.key === 'struk_wifi')       STRUK.wifi      = v;
+      if (r.key === 'struk_instagram')  STRUK.instagram = v;
+      if (r.key === 'struk_twitter')    STRUK.twitter   = v;
+    });
+    console.log('[SystemConfig] Loaded from Supabase');
+  } catch(e) { console.warn('[SystemConfig] load error:', e.message); }
+}
 
 // ── Phase 8: User Management via Edge Function ────────────────────────────
 const EDGE_URL = 'https://uutkxrsalpzfvfjtsnoq.supabase.co/functions/v1/admin-users';
