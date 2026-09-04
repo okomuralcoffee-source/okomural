@@ -4580,6 +4580,56 @@ let CABANG_DB = [
 ];
 let KARYAWAN_DB = []; // Loaded from Supabase employees table
 let PO_DB = [];
+/* ── MATERIAL PRICELIST dari Supabase ── */
+async function renderMaterialsPricelist(){
+  const mod = document.getElementById('module-pricelist');
+  if(!mod) return;
+  let container = document.getElementById('supabase-pricelist-section');
+  if(!container){
+    container = document.createElement('div');
+    container.id = 'supabase-pricelist-section';
+    container.style.cssText = 'margin-top:20px';
+    const body = mod.querySelector('.adv-page-body') || mod;
+    body.appendChild(container);
+  }
+  try {
+    const {data, error} = await supa
+      .from('materials_master')
+      .select('id, name, category, cost_per_unit, package_volume, package_unit, package_price, supplier, default_unit')
+      .order('category').order('name');
+    if(error) throw error;
+    const rp = v => v > 0 ? 'Rp '+Math.round(v).toLocaleString('id') : '—';
+    const cats = [...new Set((data||[]).map(m=>m.category||'Lainnya'))];
+    container.innerHTML = `<div class="adv-card">
+      <div class="adv-card-hd" style="margin-bottom:12px">📋 Harga Bahan Baku (Live Supabase)</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">${data?.length||0} bahan · Supplier: Lainnya</div>
+      ${cats.map(cat => {
+        const items = (data||[]).filter(m=>(m.category||'Lainnya')===cat);
+        return `<div style="margin-bottom:16px">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">${cat}</div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr>
+              <th style="text-align:left;padding:4px 8px;color:var(--text3);font-size:10px">BAHAN</th>
+              <th style="text-align:right;padding:4px 8px;color:var(--text3);font-size:10px">VOLUME KEMASAN</th>
+              <th style="text-align:right;padding:4px 8px;color:var(--text3);font-size:10px">HARGA KEMASAN</th>
+              <th style="text-align:right;padding:4px 8px;color:var(--green);font-size:10px">HPP/SATUAN</th>
+              <th style="text-align:left;padding:4px 8px;color:var(--text3);font-size:10px">SUPPLIER</th>
+            </tr></thead>
+            <tbody>${items.map(m=>`<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:6px 8px;font-weight:600">${m.name}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--text2)">${m.package_volume>0?m.package_volume+' '+m.package_unit:'—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--text2)">${rp(m.package_price)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--green)">${rp(m.cost_per_unit)}/${m.default_unit||'gr'}</td>
+              <td style="padding:6px 8px;color:var(--text3);font-size:10px">${m.supplier||'Lainnya'}</td>
+            </tr>`).join('')}</tbody>
+          </table></div>`;
+      }).join('')}
+    </div>`;
+  } catch(e){
+    container.innerHTML = `<div style="color:var(--red);font-size:12px">Gagal: ${e.message}</div>`;
+  }
+}
+
 /* ── CAPEX (Capital Expenditure) Logs ── */
 let CAPEX_DB = [
   {id:'CX-001', nama:'Mesin Espresso La Marzocco', kategori:'Peralatan', nilai:28000000, tanggal:'2026-01-15', cabang:'HQ Indrapura', umur:5, keterangan:'Unit baru pengganti mesin lama'},
@@ -5558,7 +5608,11 @@ function showModule(mod){
       await loadExpensesFromSupabase();
       renderExpensesModule();
     },
-    'pricelist': renderPricelist,
+    'pricelist': async () => {
+      await loadMaterialsFromSupabase();
+      renderPricelist();
+      renderMaterialsPricelist();
+    },
     'consignment': async () => {
       await loadConsignmentFromSupabase();
       renderConsignment();
