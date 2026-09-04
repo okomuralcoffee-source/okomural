@@ -2823,7 +2823,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
       <div class="s-item" onclick="switchSettings(this,'kategori');loadKategoriPanel()">🏷 Kategori Pengeluaran</div>
-      <div class="s-item" onclick="openResetSalesModal()" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
+      <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
       <div id="settings-cabang">
@@ -3138,6 +3138,28 @@ async function hydrateUserFromSession(session) {
         <!-- KATEGORI PENGELUARAN PANEL -->
         <div id="settings-kategori" style="display:none">
           <div style="font-size:14px;font-weight:600;margin-bottom:4px">🏷 Kategori Pengeluaran</div>
+
+        <!-- DANGER ZONE PANEL -->
+        <div id="settings-danger" class="s-panel" style="display:none">
+          <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:4px">⚠ Danger Zone</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:20px">Aksi di bawah ini bersifat permanen dan tidak bisa dibatalkan. Lakukan dengan hati-hati.</div>
+          <div style="border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:16px;background:rgba(239,68,68,.08)">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px">Reset Data Penjualan</div>
+                <div style="font-size:11px;color:var(--text2);line-height:1.6;max-width:400px">
+                  Hapus semua data transaksi (<code>sales</code> + <code>sale_items</code>).
+                  Data lain seperti produk, stok, karyawan, dan CAPEX tidak terpengaruh.<br>
+                  <b>Gunakan sebelum operasional pertama dimulai.</b>
+                </div>
+              </div>
+              <button class="btn btn-sm" style="background:var(--red);color:#fff;border:none;flex-shrink:0;margin-top:4px"
+                onclick="openResetSalesModal()">
+                🗑 Reset Data Penjualan
+              </button>
+            </div>
+          </div>
+        </div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Kelola kategori untuk input pengeluaran kasir dan Expenses & OPEX.</div>
           <div style="display:flex;gap:8px;margin-bottom:12px">
             <input type="text" id="kat-new-name" class="form-input" placeholder="Nama kategori baru..." style="flex:1">
@@ -9085,7 +9107,7 @@ function doConfirm(){if(confirmCallback)confirmCallback();closeConfirm();}
 function switchSettings(el,panel){
   document.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
   el.classList.add('active');
-  ['cabang','user','loyalitas','payment','kupon','branding','kategori'].forEach(p=>{
+  ['cabang','user','loyalitas','payment','kupon','branding','kategori','danger'].forEach(p=>{
     const el2=document.getElementById('settings-'+p);
     if(el2)el2.style.display=p===panel?'':'none';
   });
