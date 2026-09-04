@@ -13601,6 +13601,8 @@ async function confirmResetSales(){
     SUPABASE_SALES_CACHE = [];
     document.getElementById('reset-sales-overlay').classList.remove('open');
     showToast('success', '✅ Semua data penjualan berhasil dihapus. Aplikasi siap digunakan.');
+    // Log Activity — Danger Zone
+    logActivity('⚠️ DANGER ZONE', 'Reset Data Penjualan — semua sales & sale_items dihapus oleh ' + (currentUser?.name||'Owner') + ' pada ' + new Date().toLocaleString('id-ID'));
     // Refresh Live Dashboard & Sales Tracking agar KPI langsung 0
     if(typeof renderLiveDashboard === 'function') renderLiveDashboard().catch(()=>{});
     if(isModActive('sales-tracking') && typeof renderSalesTracking === 'function'){
