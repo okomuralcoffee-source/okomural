@@ -5610,6 +5610,23 @@ function showModule(mod){
     },
     'pricelist': async () => {
       await loadMaterialsFromSupabase();
+      // Populate PRICELIST_DB dari MATERIALS_DB Supabase
+      if(MATERIALS_DB.length > 0 && PRICELIST_DB.length === 0){
+        PRICELIST_DB.length = 0;
+        MATERIALS_DB.forEach((m, i) => {
+          PRICELIST_DB.push({
+            id:        'PL-'+String(i+1).padStart(3,'0'),
+            material:  m.name,
+            supplier:  m.supplier || 'Lainnya',
+            harga:     Math.round(m.cost || m.cost_per_unit || 0),
+            satuan:    m.unit || m.default_unit || 'gr',
+            updatedAt: new Date().toISOString().slice(0,10),
+            status:    'active',
+            catatan:   m.category || '',
+          });
+        });
+        lsSave('okomural_pricelist', PRICELIST_DB);
+      }
       renderPricelist();
       renderMaterialsPricelist();
     },
