@@ -8782,7 +8782,11 @@ function renderMenuMgmt(){
   const availF=document.getElementById('menu-avail-filter')?.value||'all';
   let items=[...MENU];
   if(q) items=items.filter(m=>m.name.toLowerCase().includes(q));
-  if(catF!=='all') items=items.filter(m=>m.cat===catF);
+  if(catF!=='all'){
+    const catMap2={'coffee':'Coffee','noncoffee':'Non-Coffee','food':'Makanan'};
+    const catTarget = catMap2[catF]||catF;
+    items=items.filter(m=>(m.cat||'').toLowerCase()===catTarget.toLowerCase()||(m.cat||'')=== catF);
+  }
   if(availF==='available') items=items.filter(m=>m.stock>0||m.available!==false);
   if(availF==='unavailable') items=items.filter(m=>m.stock<=0||m.available===false);
   const countEl=document.getElementById('menu-count');
