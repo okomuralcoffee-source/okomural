@@ -9106,7 +9106,7 @@ function switchSettings(el,panel){
   el.classList.add('active');
   ['cabang','user','loyalitas','payment','kupon','branding','kategori','danger'].forEach(p=>{
     const el2=document.getElementById('settings-'+p);
-    if(el2)el2.style.display=p===panel?'':'none';
+    if(el2)el2.style.display=p===panel?'block':'none';
   });
   if(panel==='loyalitas') loadLoyalitasPanel();
 }
