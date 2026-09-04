@@ -5615,8 +5615,7 @@ function showModule(mod){
     'activity-log':  renderActivityLog,
     'auto-backup':   loadBackupDashboard,
     'sistem': () => {
-      const first = document.querySelector('#module-sistem .settings-nav .s-item');
-      switchSistem(first, 'activity-log');
+      switchSistem(null, 'activity-log');
     },
     'exec-summary': async () => {
       await Promise.all([
@@ -13261,14 +13260,18 @@ let _currentOutletName = 'HQ Indrapura';
 function switchSistem(el, panel){
   // Hide all sistem panels
   document.querySelectorAll('.sistem-panel').forEach(p=>p.style.display='none');
-  // Deactivate all s-items in sistem module
-  const sistemNav = document.querySelector('#module-sistem .settings-nav');
-  if(sistemNav) sistemNav.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
+  // Deactivate all s-items in sistem sidebar
+  document.querySelectorAll('#module-sistem .s-item').forEach(i=>i.classList.remove('active'));
   // Show target panel
   const target = document.getElementById('sistem-'+panel);
   if(target) target.style.display='block';
-  // Activate clicked item
-  if(el) el.classList.add('active');
+  // Activate clicked item (or auto-activate by panel name)
+  if(el){
+    el.classList.add('active');
+  } else {
+    const auto = document.querySelector('#module-sistem .s-item[onclick*="'+panel+'"]');
+    if(auto) auto.classList.add('active');
+  }
   // Load content
   if(panel==='activity-log') loadSistemActivityLog();
   if(panel==='auto-backup')  loadSistemAutoBackup();
@@ -13293,7 +13296,7 @@ async function loadSistemActivityLog(){
   el.innerHTML = '<div style="font-size:11px;color:var(--text3)">Memuat...</div>';
   try {
     const {data, error} = await supa.from('activity_logs')
-      .select('id, module, action, created_at, employees(name)')
+      .select('id, module, action, created_at')
       .order('created_at', {ascending:false})
       .limit(100);
     if(error) throw error;
@@ -13317,7 +13320,7 @@ async function loadSistemActivityLog(){
             <td style="padding:6px 8px;font-size:10px;color:var(--text3)">${ts}</td>
             <td style="padding:6px 8px;font-size:10px;font-weight:600;color:${isDanger?'var(--red)':'var(--blue)'}">${a.module||'—'}</td>
             <td style="padding:6px 8px;color:var(--text2)">${a.action||'—'}</td>
-            <td style="padding:6px 8px;font-size:10px;color:var(--text3)">${a.employees?.name||'System'}</td>
+            <td style="padding:6px 8px;font-size:10px;color:var(--text3)">—</td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -13337,7 +13340,7 @@ async function loadSistemAutoBackup(){
     const {data} = await supa.from('backup_logs')
       .select('id, status, file_name, file_size, created_at')
       .order('created_at', {ascending:false}).limit(20);
-    const cfg = await supa.from('system_config').select('value').eq('key','backup_schedule').single();
+    const cfg = await supa.from('system_config').select('value').eq('key','backup_schedule').maybeSingle();
     const schedule = cfg?.data?.value ? JSON.parse(cfg.data.value) : {hour:3};
     el.innerHTML = `
       <div style="background:var(--bg2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px">
