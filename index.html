@@ -2410,14 +2410,14 @@ async function hydrateUserFromSession(session) {
       </div>
       <!-- Sistem group (collapsible) -->
       <div class="nav-group" id="navg-sistem">
-        <div class="nav-group-hd" onclick="toggleNavGroup('sistem')">
+        <div class="nav-group-hd" onclick="toggleNavGroup(this)">
           <div style="display:flex;align-items:center;gap:7px">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
             <span>Sistem</span>
           </div>
           <svg class="nav-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <div class="nav-group-body" id="navgb-sistem">
+        <div class="nav-group-body open" id="navgb-sistem">
           <div class="nav-item" onclick="showSistemTab('activity-log');closeSidebar()" id="nav-activity-log" data-roles="Owner,Manajer">🔍 Activity Log</div>
           <div class="nav-item" onclick="showSistemTab('auto-backup');closeSidebar()" id="nav-auto-backup" data-roles="Owner">☁️ Auto Backup</div>
           <div class="nav-item" onclick="showSistemTab('danger-zone');closeSidebar()" id="nav-danger-zone" data-roles="Owner" style="color:var(--red)">⚠ Danger Zone</div>
@@ -5615,8 +5615,8 @@ function showModule(mod){
     'activity-log':  renderActivityLog,
     'auto-backup':   loadBackupDashboard,
     'sistem': () => {
-      const first = document.querySelector('#sistem-panel .s-item');
-      if(first) switchSistem(first,'activity-log');
+      const first = document.querySelector('#module-sistem .settings-nav .s-item');
+      switchSistem(first, 'activity-log');
     },
     'exec-summary': async () => {
       await Promise.all([
@@ -13259,11 +13259,16 @@ let _currentOutletId = '11111111-0000-0000-0000-000000000001';
 let _currentOutletName = 'HQ Indrapura';
 
 function switchSistem(el, panel){
-  document.querySelectorAll('#sistem-panel .s-item').forEach(i=>i.classList.remove('active'));
-  if(el) el.classList.add('active');
+  // Hide all sistem panels
   document.querySelectorAll('.sistem-panel').forEach(p=>p.style.display='none');
+  // Deactivate all s-items in sistem module
+  const sistemNav = document.querySelector('#module-sistem .settings-nav');
+  if(sistemNav) sistemNav.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
+  // Show target panel
   const target = document.getElementById('sistem-'+panel);
   if(target) target.style.display='block';
+  // Activate clicked item
+  if(el) el.classList.add('active');
   // Load content
   if(panel==='activity-log') loadSistemActivityLog();
   if(panel==='auto-backup')  loadSistemAutoBackup();
@@ -13272,23 +13277,19 @@ function switchSistem(el, panel){
 function showSistemTab(tab){
   showModule('sistem');
   setTimeout(()=>{
-    const items = document.querySelectorAll('.settings-nav .s-item');
+    // Find s-item in sistem module sidebar
     const tabMap = {'activity-log':0,'auto-backup':1,'danger-zone':2};
     const idx = tabMap[tab] ?? 0;
+    const sistemNav = document.querySelector('#module-sistem .settings-nav');
+    const items = sistemNav ? sistemNav.querySelectorAll('.s-item') : [];
     if(items[idx]) switchSistem(items[idx], tab);
-    // Update nav active state
-    ['nav-activity-log','nav-auto-backup','nav-danger-zone'].forEach(id=>{
-      const el = document.getElementById(id);
-      if(el) el.classList.remove('active');
-    });
-    const navEl = document.getElementById('nav-'+tab);
-    if(navEl) navEl.classList.add('active');
-  }, 100);
+  }, 150);
 }
 
 async function loadSistemActivityLog(){
   const el = document.getElementById('activity-log-content-sistem');
-  if(!el || el.dataset.loaded) return;
+  if(!el) return;
+  el.dataset.loaded = '';
   el.innerHTML = '<div style="font-size:11px;color:var(--text3)">Memuat...</div>';
   try {
     const {data, error} = await supa.from('activity_logs')
@@ -13329,7 +13330,8 @@ async function loadSistemActivityLog(){
 
 async function loadSistemAutoBackup(){
   const el = document.getElementById('auto-backup-content-sistem');
-  if(!el || el.dataset.loaded) return;
+  if(!el) return;
+  el.dataset.loaded = '';
   el.innerHTML = '<div style="font-size:11px;color:var(--text3)">Memuat...</div>';
   try {
     const {data} = await supa.from('backup_logs')
