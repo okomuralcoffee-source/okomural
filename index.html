@@ -2826,7 +2826,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
-      <div id="settings-cabang">
+      <div id="settings-cabang" class="s-panel">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">Cabang &amp; Outlet</div>
         <div class="table-wrap" style="margin-bottom:14px">
           <table><thead><tr><th>Nama</th><th>Alamat</th><th>Status</th><th></th></tr></thead><tbody>
@@ -5553,9 +5553,11 @@ function showModule(mod){
     },
     // 'sales-tracking' also handled by Override 2 (setSalesDateRange → renderSalesTracking)
     'settings': async ()=>{
+      // Show first panel (Cabang) by default
+      const firstItem = document.querySelector('#module-settings .s-item');
+      if(firstItem) switchSettings(firstItem, 'cabang');
       renderSettingsCabang&&renderSettingsCabang();
       renderKuponList&&renderKuponList();
-      // Load users dari Supabase via Edge Function lalu render
       if(typeof loadUsersFromSupabase === 'function') await loadUsersFromSupabase();
       else if(typeof renderSettingsUser === 'function') renderSettingsUser();
     },
