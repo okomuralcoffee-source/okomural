@@ -5550,7 +5550,27 @@ function showModule(mod){
       await loadExpensesFromSupabase();
       renderExpensesModule();
     },
-    'pricelist': renderPricelist,
+    'pricelist': async () => {
+      // Load materials dari Supabase lalu populate PRICELIST_DB
+      await loadMaterialsFromSupabase();
+      if(MATERIALS_DB.length > 0){
+        PRICELIST_DB.length = 0;
+        MATERIALS_DB.forEach((m,i) => {
+          PRICELIST_DB.push({
+            id: 'PL-'+String(i+1).padStart(3,'0'),
+            material: m.name,
+            supplier: m.supplier || 'Lainnya',
+            harga: Math.round(m.cost || m.cost_per_unit || 0),
+            satuan: m.unit || m.default_unit || 'gr',
+            updatedAt: new Date().toISOString().slice(0,10),
+            status: 'active',
+            catatan: m.category || '',
+          });
+        });
+      }
+      renderPricelist();
+      renderMaterialsPricelist();
+    },
     'consignment': async () => {
       await loadConsignmentFromSupabase();
       renderConsignment();
