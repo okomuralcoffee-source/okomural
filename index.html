@@ -2572,7 +2572,7 @@ async function hydrateUserFromSession(session) {
   <div class="page-header">
     <div class="page-header-left"><h2>Product Menu Management</h2><p>Kelola produk, harga, ketersediaan, BOM &amp; modifier</p></div>
     <div style="display:flex;gap:6px">
-      <button class="btn btn-secondary btn-sm" id="menu-tab-modifier-btn" onclick="switchMenuTab('modifier')">🧂 Modifier</button>
+      <button class="btn btn-secondary btn-sm" id="menu-tab-modifier-btn" onclick="loadToppingDB().then(()=>{switchMenuTab('modifier');renderModifierContent();})">🧂 Modifier</button>
       <button class="btn btn-secondary btn-sm" onclick="switchMenuTab('produk')" id="menu-tab-produk-btn">Semua Produk</button>
       <button class="btn btn-primary btn-sm" onclick="openProdukModal(null)">+ Produk</button>
     </div>
@@ -2820,7 +2820,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'user')">User &amp; Role</div>
       <div class="s-item" onclick="switchSettings(this,'loyalitas')">Program Loyalitas</div>
       <div class="s-item" onclick="switchSettings(this,'payment')">Metode Bayar</div>
-      <div class="s-item" onclick="switchSettings(this,'kupon');renderKuponList()">Kode Kupon</div>
+      <div class="s-item" onclick="switchSettings(this,'kupon');loadKuponDB().then(renderKuponList)">Kode Kupon</div>
       <div class="s-item" onclick="switchSettings(this,'branding')">🎨 Branding</div>
 
       <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
@@ -4607,17 +4607,23 @@ let STRUK_CONFIG = {
   paperWidth: '80mm',  // '58mm' atau '80mm' sesuai mesin thermal
 };
 let LOYALTY_CONFIG = {
-  pointsPerIdr: 1000,   // Rp 1.000 belanja = 1 poin
-  pointsToIdr:  100,    // 100 poin = Rp 1.000 (saat redeem)
-  minRedeem:    100,    // minimum poin untuk redeem
-  regularMult:  1,      // multiplier poin Regular
-  silverMin:    500000, // min. belanja untuk tier Silver (Rp)
-  silverDisc:   0.05,   // diskon otomatis Silver (5%)
-  silverMult:   1.5,    // multiplier poin Silver
-  goldMin:      2000000,// min. belanja untuk tier Gold (Rp)
-  goldDisc:     0.10,   // diskon otomatis Gold (10%)
-  goldMult:     2,      // multiplier poin Gold
+  pointsPerIdr: 1000,
+  pointsToIdr:  100,
+  minRedeem:    500,
 };
+
+async function loadLoyaltyConfig(){
+  try {
+    const {data} = await supa.from('system_config')
+      .select('key,value').in('key',['loyalty_points_per_idr','loyalty_points_to_idr','loyalty_min_redeem']);
+    if(data) data.forEach(r => {
+      if(r.key==='loyalty_points_per_idr') LOYALTY_CONFIG.pointsPerIdr = parseInt(r.value)||1000;
+      if(r.key==='loyalty_points_to_idr')  LOYALTY_CONFIG.pointsToIdr  = parseInt(r.value)||100;
+      if(r.key==='loyalty_min_redeem')     LOYALTY_CONFIG.minRedeem    = parseInt(r.value)||500;
+    });
+    console.log('[Loyalty] Config loaded');
+  } catch(e){ console.warn('[Loyalty] config load error:', e.message); }
+}
 let SESSION = {
   transactions: [],   // semua transaksi POS sesi ini
   opnameLogs: [],     // log opname inventory
@@ -5333,6 +5339,10 @@ function goToLauncher(){
   loadMaterialsFromSupabase();
   // Load semua BOM dari Supabase agar stock deduction berjalan
   loadAllBOMFromSupabase().catch(e => console.warn('BOM load error:', e));
+  // Load data dari Supabase (modifier, kupon, loyalty)
+  loadToppingDB().catch(()=>{});
+  loadKuponDB().catch(()=>{});
+  loadLoyaltyConfig().catch(()=>{});
   // Request push notification permission
   if('Notification' in window && Notification.permission === 'default'){
     Notification.requestPermission();
@@ -8290,24 +8300,30 @@ function openCheckout(){
 /* ══════════════════════════════════════════════════
    KODE KUPON — Generate, Validasi, Apply
 ══════════════════════════════════════════════════ */
-let KUPON_DB = [
-  {
-    id: 'KPN-001', code: 'OPENING50', name: 'Promo Grand Opening',
-    type: 'pct', value: 50,
-    maxUse: 100, usedCount: 12,
-    minTrx: 50000, cat: 'all',
-    startDate: '2025-08-01', endDate: '2025-12-31',
-    active: true, createdBy: 'AdminOKO', createdAt: '2025-08-01'
-  },
-  {
-    id: 'KPN-002', code: 'DISC20K', name: 'Diskon Flat 20rb',
-    type: 'nom', value: 20000,
-    maxUse: 0, usedCount: 5,
-    minTrx: 100000, cat: 'all',
-    startDate: '2025-08-01', endDate: '',
-    active: true, createdBy: 'AdminOKO', createdAt: '2025-08-01'
-  }
-];
+let KUPON_DB = []; // Loaded from Supabase coupons table
+
+async function loadKuponDB(){
+  try {
+    const {data, error} = await supa.from('coupons').select('*').order('created_at', {ascending:false});
+    if(error) throw error;
+    KUPON_DB.length = 0;
+    (data||[]).forEach(k => KUPON_DB.push({
+      id:          k.id,
+      supaId:      k.id,
+      code:        k.code,
+      name:        k.name,
+      description: k.description||'',
+      type:        k.type,          // 'percent'|'flat'
+      value:       parseFloat(k.value)||0,
+      minPurchase: parseFloat(k.min_purchase)||0,
+      maxUsage:    k.max_usage||null,
+      usedCount:   k.used_count||0,
+      validUntil:  k.valid_until||null,
+      active:      k.is_active,
+    }));
+    console.log('[Kupon] Loaded:', KUPON_DB.length);
+  } catch(e){ console.warn('[Kupon] load error:', e.message); }
+}
 let activeKupon = null;     // kupon yang sedang applied di cart
 let kuponFilter = 'semua';
 let editingKuponId = null;
@@ -8547,44 +8563,52 @@ function updateKuponTypePreview(){
     preview.style.display = 'none';
   }
 }
-function saveKupon(){
+async function saveKupon(){
   const code = document.getElementById('km-code').value.trim().toUpperCase();
   const name = document.getElementById('km-name').value.trim();
   const type = document.getElementById('km-type').value;
   const value = parseFloat(document.getElementById('km-value').value) || 0;
-  const maxUse = parseInt(document.getElementById('km-max-use').value) || 0;
+  const maxUse = parseInt(document.getElementById('km-max-use').value) || null;
   const minTrx = parseInt(document.getElementById('km-min-trx').value) || 0;
-  const startDate = document.getElementById('km-start').value;
-  const endDate = document.getElementById('km-end').value;
-  const cat = document.getElementById('km-cat').value;
+  const endDate = document.getElementById('km-end').value || null;
   if(!code){ showToast('error','Kode kupon kosong'); return; }
   if(value <= 0){ showToast('error','Nilai diskon harus lebih dari 0'); return; }
   if(type === 'pct' && value > 100){ showToast('error','Persentase maksimal 100%'); return; }
-  // Cek duplikat kode (kecuali saat edit)
   const dupe = KUPON_DB.find(k => k.code === code && k.id !== editingKuponId);
-  if(dupe){ showToast('error','Kode kupon sudah ada','Gunakan kode lain.'); return; }
-  if(editingKuponId){
-    const k = KUPON_DB.find(x => x.id === editingKuponId);
-    if(k){ Object.assign(k, { code, name, type, value, maxUse, minTrx, startDate, endDate, cat }); }
-    showToast('success','Kupon diperbarui', code);
-  } else {
-    KUPON_DB.push({
-      id: 'KPN-' + String(KUPON_DB.length + 1).padStart(3,'0'),
-      code, name, type, value, maxUse, usedCount: 0,
-      minTrx, cat, startDate, endDate,
-      active: true, createdBy: currentUser.name,
-      createdAt: new Date().toISOString().slice(0,10)
-    });
-    showToast('success','Kupon dibuat!', code + ' · ' + (type === 'pct' ? value + '%' : 'Rp ' + value.toLocaleString('id')));
-  }
-  closeKuponModal();
-  renderKuponList();
+  if(dupe){ showToast('error','Kode kupon sudah ada'); return; }
+  // Map type: pct→percent
+  const supaType = type === 'pct' ? 'percent' : 'flat';
+  try {
+    if(editingKuponId){
+      const {error} = await supa.from('coupons').update({
+        code, name, type: supaType, value, min_purchase: minTrx,
+        max_usage: maxUse||null, valid_until: endDate||null,
+      }).eq('id', editingKuponId);
+      if(error) throw error;
+      showToast('success','Kupon diperbarui', code);
+    } else {
+      const {error} = await supa.from('coupons').insert({
+        code, name, type: supaType, value, min_purchase: minTrx,
+        max_usage: maxUse||null, valid_until: endDate||null,
+        is_active: true, used_count: 0,
+      });
+      if(error) throw error;
+      showToast('success','Kupon dibuat!', code);
+    }
+    await loadKuponDB();
+    closeKuponModal();
+    renderKuponList();
+  } catch(e){ showToast('error','Gagal: '+e.message); }
 }
 function toggleKuponActive(id){
   const k = KUPON_DB.find(x => x.id === id);
   if(!k) return;
-  k.active = !k.active;
-  renderKuponList();
+  const newActive = !k.active;
+  supa.from('coupons').update({is_active: newActive}).eq('id',id)
+    .then(async({error})=>{
+      if(error){ showToast('error','Gagal: '+error.message); return; }
+      await loadKuponDB(); renderKuponList();
+    });
   showToast(k.active ? 'success' : 'warning', k.code + ' ' + (k.active ? 'diaktifkan' : 'dinonaktifkan'));
 }
 function deleteKupon(id){
@@ -9134,7 +9158,7 @@ function switchSettings(el,panel){
     const el2=document.getElementById('settings-'+p);
     if(el2) el2.style.display = p===panel ? 'block' : 'none';
   });
-  if(panel==='loyalitas') loadLoyalitasPanel();
+  if(panel==='loyalitas'){ loadLoyaltyConfig().then(loadLoyalitasPanel); }
 }
 function exportData(nama){
   const rows = [];
@@ -10343,15 +10367,24 @@ function confirmQRISPayment(){
    Data structures, Menu Management, POS Sheet
 ══════════════════════════════════════════════════ */
 /* ── Master Topping List ── */
-let TOPPING_DB = [
-  { id: 'T01', name: 'Extra Shot',     price: 8000,  type: 'global' },
-  { id: 'T02', name: 'Whipped Cream',  price: 5000,  type: 'global' },
-  { id: 'T03', name: 'Boba Pearl',     price: 7000,  type: 'global' },
-  { id: 'T04', name: 'Oat Milk',       price: 10000, type: 'global' },
-  { id: 'T05', name: 'Brown Sugar',    price: 5000,  type: 'global' },
-  { id: 'T06', name: 'Cheese Foam',    price: 12000, type: 'specific' },
-  { id: 'T07', name: 'Matcha Drizzle', price: 6000,  type: 'specific' },
-];
+let TOPPING_DB = []; // Loaded from Supabase modifiers table
+
+async function loadToppingDB(){
+  try {
+    const {data, error} = await supa.from('modifiers').select('*').eq('is_active',true).order('name');
+    if(error) throw error;
+    TOPPING_DB.length = 0;
+    (data||[]).forEach(m => TOPPING_DB.push({
+      id:         m.id,
+      supaId:     m.id,
+      name:       m.name,
+      price:      parseFloat(m.price)||0,
+      type:       m.type||'global',
+      productIds: m.product_ids||[],
+    }));
+    console.log('[Modifiers] Loaded:', TOPPING_DB.length);
+  } catch(e){ console.warn('[Modifiers] load error:', e.message); }
+}
 /* ── Product Modifier Config ── */
 // productModifiers[productId] = { largeEnabled, largePriceAdd, specificToppingIds[] }
 let productModifiers = {
@@ -10717,14 +10750,14 @@ function deleteTopping(id){
   openConfirm('Hapus Topping ' + t.name + '?',
     'Topping ini akan dihapus dari semua produk.',
     'Hapus',
-    () => {
-      TOPPING_DB = TOPPING_DB.filter(x => x.id !== id);
-      // Remove from all product specific lists
-      Object.values(productModifiers).forEach(pm => {
-        pm.specificToppingIds = pm.specificToppingIds.filter(tid => tid !== id);
-      });
-      renderModifierContent();
-      showToast('info','Topping dihapus');
+    async () => {
+      try {
+        const {error} = await supa.from('modifiers').delete().eq('id', id);
+        if(error) throw error;
+        await loadToppingDB();
+        renderModifierContent();
+        showToast('info','Topping dihapus');
+      } catch(e){ showToast('error','Gagal: '+e.message); }
     }
   );
 }
