@@ -5505,8 +5505,12 @@ function showModule(mod){
     },
     // 'sales-tracking' also handled by Override 2 (setSalesDateRange → renderSalesTracking)
     'settings': async ()=>{
+      // Reset ke panel cabang (default) setiap kali settings dibuka
+      switchSettings(
+        document.querySelector('#module-settings .s-item'),
+        'cabang'
+      );
       renderSettingsCabang&&renderSettingsCabang();
-      renderKuponList&&renderKuponList();
       // Load users dari Supabase via Edge Function lalu render
       if(typeof loadUsersFromSupabase === 'function') await loadUsersFromSupabase();
       else if(typeof renderSettingsUser === 'function') renderSettingsUser();
