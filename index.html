@@ -6356,10 +6356,91 @@ function toggleBranchTxDetail(cabId){
   if(btn) btn.textContent = isOpen ? '📋 Detail Transaksi' : '▲ Sembunyikan';
 }
 
-function renderBranchReport(period){
-  // Delegasikan ke renderLiveDashboard yang sudah load dari Supabase
-  // renderLiveDashboard handles both Global dan Per Cabang
-  if(typeof renderLiveDashboard === 'function') renderLiveDashboard().catch(()=>{});
+async function renderBranchReport(period){
+  const branchContainer = document.getElementById('ld-branch-cards');
+  if(!branchContainer) return;
+  branchContainer.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:12px">Memuat...</div>';
+
+  // Date range berdasarkan period
+  const now = new Date();
+  let fromDate;
+  if(period==='hari')   fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  else if(period==='minggu'){ fromDate = new Date(now); fromDate.setDate(now.getDate()-6); }
+  else { fromDate = new Date(now.getFullYear(), now.getMonth(), 1); }
+  const fromStr = fromDate.toISOString().slice(0,10) + 'T00:00:00Z';
+
+  const BRANCH_MAP = {
+    '11111111-0000-0000-0000-000000000001': 'HQ Indrapura',
+    '11111111-0000-0000-0000-000000000002': 'Cart #1 Sukamulya',
+    '11111111-0000-0000-0000-000000000003': 'Cart #2 Petapahan',
+  };
+
+  try {
+    const {data, error} = await supa
+      .from('sales')
+      .select('id, total_amount, payment_method, created_at, branch_id, employees!sales_staff_id_fkey(name)')
+      .eq('payment_status','paid')
+      .gte('created_at', fromStr)
+      .order('created_at', {ascending:false});
+    if(error) throw error;
+
+    const byBranch = {};
+    (data||[]).forEach(t => {
+      const bn = BRANCH_MAP[t.branch_id] || 'Cabang Lain';
+      if(!byBranch[bn]) byBranch[bn] = {rev:0, txList:[]};
+      byBranch[bn].rev += parseFloat(t.total_amount||0);
+      byBranch[bn].txList.push(t);
+    });
+
+    const totalAll = Object.values(byBranch).reduce((s,b)=>s+b.rev,0);
+    const rp = v => 'Rp '+Math.round(v).toLocaleString('id');
+
+    if(!Object.keys(byBranch).length){
+      branchContainer.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:24px">Belum ada transaksi pada periode ini.</div>';
+      return;
+    }
+
+    branchContainer.innerHTML = Object.entries(byBranch)
+      .sort((a,b)=>b[1].rev-a[1].rev)
+      .map(([name,d])=>`
+      <div style="margin-bottom:16px;background:var(--bg1);border-radius:8px;border:1px solid var(--border);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg2)">
+          <div style="font-weight:700;font-size:13px">${name}</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="font-weight:800;font-size:15px;color:var(--green)">${rp(d.rev)}</div>
+            <div style="font-size:11px;color:var(--text3)">${d.txList.length} transaksi</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:6px 14px;text-align:left;color:var(--text3);font-size:10px;font-weight:700">WAKTU</th>
+            <th style="padding:6px 14px;text-align:left;color:var(--text3);font-size:10px;font-weight:700">KASIR</th>
+            <th style="padding:6px 14px;text-align:right;color:var(--text3);font-size:10px;font-weight:700">TOTAL</th>
+            <th style="padding:6px 14px;text-align:left;color:var(--text3);font-size:10px;font-weight:700">METODE</th>
+          </tr></thead>
+          <tbody>
+            ${d.txList.slice(0,5).map(t=>{
+              const dt = new Date(t.created_at);
+              const timeStr = period==='hari'
+                ? dt.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})
+                : dt.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})+' '+dt.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+              return `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:6px 14px;color:var(--text3)">${timeStr}</td>
+                <td style="padding:6px 14px">${t.employees?.name||'—'}</td>
+                <td style="padding:6px 14px;text-align:right;font-weight:600">${rp(parseFloat(t.total_amount||0))}</td>
+                <td style="padding:6px 14px"><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:var(--bg2);font-weight:700">${(t.payment_method||'cash').toUpperCase()}</span></td>
+              </tr>`;
+            }).join('')}
+            ${d.txList.length>5?`<tr><td colspan="4" style="padding:6px 14px;font-size:10px;color:var(--text3);text-align:center">+${d.txList.length-5} transaksi lainnya</td></tr>`:''}
+          </tbody>
+        </table>
+      </div>`).join('') +
+      `<div style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:600;text-align:right;border-top:1px solid var(--border);margin-top:4px">
+        TOTAL SEMUA CABANG: <span style="color:var(--green);font-size:14px;font-weight:800"> ${rp(totalAll)}</span>
+      </div>`;
+  } catch(e){
+    branchContainer.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">Gagal: ${e.message}</div>`;
+  }
 }
 
 async function renderLiveDashboard(){
