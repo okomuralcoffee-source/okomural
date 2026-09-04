@@ -5513,6 +5513,11 @@ function applySidebarPermissions(){
   }
 }
 function showModule(mod){
+  // Close any open overlays from previous module
+  ['reset-sales-overlay','capex-modal-overlay','bulk-modal-overlay','belanja-overlay'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove('open');
+  });
   document.querySelectorAll('.module').forEach(m=>m.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const m=document.getElementById('module-'+mod),n=document.getElementById('nav-'+mod);
