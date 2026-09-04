@@ -9107,12 +9107,14 @@ function openConfirm(title,msg,dangerLabel,onOk){
 function closeConfirm(){document.getElementById('confirm-overlay').classList.remove('open');confirmCallback=null;}
 function doConfirm(){if(confirmCallback)confirmCallback();closeConfirm();}
 function switchSettings(el,panel){
-  document.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
-  el.classList.add('active');
-  ['cabang','user','loyalitas','payment','kupon','branding','kategori','danger'].forEach(p=>{
-    const el2=document.getElementById('settings-'+p);
-    if(el2)el2.style.display=p===panel?'':'none';
-  });
+  // Scope ke settings module saja
+  const settingsMod = document.getElementById('module-settings');
+  if(settingsMod) settingsMod.querySelectorAll('.s-item').forEach(i=>i.classList.remove('active'));
+  if(el) el.classList.add('active');
+  // Hide semua s-panel, show yang dipilih dengan display:block
+  document.querySelectorAll('#module-settings .s-panel').forEach(p=>p.style.display='none');
+  const target = document.getElementById('settings-'+panel);
+  if(target) target.style.display='block';
   if(panel==='loyalitas') loadLoyalitasPanel();
   if(panel==='kategori')  loadKategoriPanel();
 }
