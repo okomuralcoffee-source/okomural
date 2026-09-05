@@ -1161,7 +1161,6 @@ tr:hover td{background:var(--bg2)}
 .crm-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:640px){.crm-grid{grid-template-columns:1fr}}
 .settings-grid{display:grid;grid-template-columns:180px 1fr;gap:14px}
-.s-panel{display:none}
 @media(max-width:640px){.settings-grid{grid-template-columns:1fr}}
 .settings-nav{padding:8px}
 .settings-nav .s-item{padding:8px 10px;border-radius:2px;font-size:12px;cursor:pointer;color:var(--text2);margin-bottom:2px}
@@ -2827,7 +2826,7 @@ async function hydrateUserFromSession(session) {
       <div class="s-item" onclick="switchSettings(this,'danger')" style="color:var(--red);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">⚠ Danger Zone</div>
     </div>
     <div class="card" style="padding:18px" id="settings-panel">
-      <div id="settings-cabang" class="s-panel" style="display:none">
+      <div id="settings-cabang" class="s-panel">
         <div style="font-size:14px;font-weight:600;margin-bottom:14px">Cabang &amp; Outlet</div>
         <div class="table-wrap" style="margin-bottom:14px">
           <table><thead><tr><th>Nama</th><th>Alamat</th><th>Status</th><th></th></tr></thead><tbody>
