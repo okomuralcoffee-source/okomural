@@ -3462,6 +3462,7 @@ async function hydrateUserFromSession(session) {
   </div>
   <!-- Tab: Global -->
   <div id="sh-panel-global">
+  <div id="sh-saldo-awal-warn"></div>
   <div class="adv-kpi-row" id="sh-kpi-row"></div>
   <div class="adv-card" style="margin-top:14px">
     <div class="adv-card-hd">Shareholder Breakdown</div>
@@ -13114,56 +13115,123 @@ async function loadShareholdersFromSupabase(){
 }
 
 async function renderShareholderUI(){
-  // ── Fetch real data dari Supabase ──
+  // ── Fetch real data dari Supabase, DIPISAH PER CABANG ──
+  // Global = laba yang jadi hak entitas OKOMURAL saja.
+  // HQ Indrapura = entitas itu sendiri -> 100% laba jadi hak entitas.
+  // Cart #1 / Cart #2 -> hanya porsi "Okomural (entitas)" yang jadi hak entitas,
+  // sisanya hak investor outlet (mis. Samsudin di Cart #1).
+  const BR_HQ    = '11111111-0000-0000-0000-000000000001';
+  const BR_CART1 = '11111111-0000-0000-0000-000000000002';
+  const BR_CART2 = '11111111-0000-0000-0000-000000000003';
+
   const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+  const rev = {}, cogs = {}, opex = {};
   let totalRevYTD = 0, totalCOGS = 0, totalOpex = 0;
+  // Porsi entitas per cabang, diambil dari outlet_shareholders (default 1 = 100%)
+  const entitasShare = { [BR_HQ]: 1, [BR_CART1]: 0.4, [BR_CART2]: 0.4 };
+
   try {
-    // Revenue & COGS dari sales YTD (semua cabang)
+    // Porsi entitas di tiap outlet — dibaca dari DB agar ikut berubah saat equity di-edit
+    const { data: osRows } = await supa.from('outlet_shareholders')
+      .select('branch_id, name, modal_pct, kelola_pct, bobot_investor, bobot_pengelola');
+    (osRows||[]).forEach(r => {
+      if (!/entitas/i.test(r.name || '')) return;
+      const bi = parseFloat(r.bobot_investor  ?? 60) / 100;
+      const bp = parseFloat(r.bobot_pengelola ?? 40) / 100;
+      const mp = parseFloat(r.modal_pct  || 0) / 100;
+      const kp = parseFloat(r.kelola_pct || 0) / 100;
+      entitasShare[r.branch_id] = (mp * bi) + (kp * bp);
+    });
+    entitasShare[BR_HQ] = 1; // HQ adalah entitas itu sendiri
+
+    // Revenue per cabang
     const { data: salesData } = await supa.from('sales')
-      .select('total_amount')
+      .select('branch_id, total_amount')
       .eq('payment_status','paid')
       .gte('created_at', yearStart);
-    totalRevYTD = (salesData||[]).reduce((s,r)=>s+parseFloat(r.total_amount||0),0);
+    (salesData||[]).forEach(r => {
+      const b = r.branch_id;
+      rev[b] = (rev[b]||0) + parseFloat(r.total_amount||0);
+    });
 
-    // COGS: dari sale_items.hpp_per_unit × quantity, join ke sales untuk filter YTD
+    // COGS per cabang
     const { data: itemsData } = await supa.from('sale_items')
-      .select('quantity, hpp_per_unit, sales!inner(created_at, payment_status)')
+      .select('quantity, hpp_per_unit, sales!inner(branch_id, created_at, payment_status)')
       .eq('sales.payment_status','paid')
       .gte('sales.created_at', yearStart);
-    totalCOGS = (itemsData||[]).reduce((s,r)=>{
-      const hpp = parseFloat(r.hpp_per_unit||0);
-      return s + hpp * parseFloat(r.quantity||1);
-    },0);
+    (itemsData||[]).forEach(r => {
+      const b = r.sales?.branch_id;
+      if(!b) return;
+      cogs[b] = (cogs[b]||0) + parseFloat(r.hpp_per_unit||0) * parseFloat(r.quantity||1);
+    });
 
-    // OPEX dari expenses YTD (semua cabang)
+    // OPEX per cabang
     const { data: expData } = await supa.from('expenses')
-      .select('amount')
+      .select('branch_id, amount')
       .gte('expense_date', yearStart.slice(0,10));
-    totalOpex = (expData||[]).reduce((s,r)=>s+parseFloat(r.amount||0),0);
+    (expData||[]).forEach(r => {
+      const b = r.branch_id;
+      opex[b] = (opex[b]||0) + parseFloat(r.amount||0);
+    });
   } catch(e){ console.warn('[Shareholder] Supabase fetch error:', e.message); }
+
+  // Laba entitas = jumlah laba tiap cabang x porsi entitas di cabang itu
+  const allBranches = new Set([...Object.keys(rev), ...Object.keys(cogs), ...Object.keys(opex)]);
+  let netProfit = 0, labaCabangPenuh = 0;
+  allBranches.forEach(b => {
+    const r = rev[b]||0, cg = cogs[b]||0, op = opex[b]||0;
+    const labaCabang = r - cg - op;
+    const share = entitasShare[b] ?? 1;
+    totalRevYTD += r; totalCOGS += cg; totalOpex += op;
+    labaCabangPenuh += labaCabang;
+    netProfit += labaCabang * share;
+  });
+  const labaBukanHakEntitas = labaCabangPenuh - netProfit;
 
   const totalCap   = INJECTIONS_DB.reduce((s,c)=>s+parseFloat(c.amount||0),0);
   const totalCapex = CAPEX_DB.reduce((s,c)=>s+c.nilai,0);
-  const netProfit  = totalRevYTD - totalCOGS - totalOpex;
   const equity     = totalCap - totalCapex + netProfit;
+  const saldoAwalBelumDiset = totalCap === 0 && totalCapex === 0;
 
   const kpiEl = document.getElementById('sh-kpi-row');
   if(kpiEl) kpiEl.innerHTML =
-    kpiHTML(ICON_DOLLAR,'Total Equity',rp(equity),'Modal bersih estimasi',equity>0?1:-1,'') +
-    kpiHTML(ICON_DOLLAR,'Capital Injected',rp(totalCap),'Total modal disetor',1,'') +
-    kpiHTML(ICON_TREND,'Net Profit YTD',rp(netProfit),'Omzet − HPP − OPEX',netProfit>0?1:-1,'') +
+    kpiHTML(ICON_DOLLAR,'Total Equity',rp(equity),'Belum termasuk saldo awal',equity>0?1:-1,'') +
+    kpiHTML(ICON_DOLLAR,'Capital Injected',rp(totalCap),'Suntikan modal baru',1,'') +
+    kpiHTML(ICON_TREND,'Net Profit YTD',rp(netProfit),'Hak entitas saja',netProfit>0?1:-1,'') +
     kpiHTML(ICON_OPEX,'Total CAPEX',rp(totalCapex),'Aset tetap',0,'');
+
+  // ── Banner: saldo awal belum ditetapkan ──
+  const warnEl = document.getElementById('sh-saldo-awal-warn');
+  if(warnEl){
+    warnEl.innerHTML = saldoAwalBelumDiset ? `
+      <div style="border:1px solid rgba(239,158,39,.35);background:rgba(239,158,39,.10);border-radius:6px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:4px">⚠ Saldo awal belum ditetapkan</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.6">
+          Angka di bawah <b>hanya menghitung laba sejak transaksi tercatat di sistem</b>. Nilai aset OKOMURAL
+          (peralatan, gerobak, stok) dan akumulasi laba dari operasional sebelumnya belum dimasukkan,
+          sehingga Total Equity yang sebenarnya <b>lebih besar dari angka ini</b>.<br>
+          Lengkapi CAPEX Logs dan tetapkan saldo awal ekuitas agar laporan ini akurat.
+        </div>
+      </div>` : '';
+  }
 
   // ── Formula ──
   const formulaEl = document.getElementById('sh-equity-formula');
   if(formulaEl) formulaEl.innerHTML = `
     <div class="equity-formula-row positive"><span>Modal Disetor (Capital Injection)</span><span class="val">+ ${rp(totalCap)}</span></div>
-    <div class="equity-formula-row positive"><span>Net Profit YTD (Omzet − HPP − OPEX)</span><span class="val">${netProfit>=0?'+ ':'− '}${rp(Math.abs(netProfit))}</span></div>
+    <div class="equity-formula-row positive"><span>Net Profit YTD — hak entitas</span><span class="val">${netProfit>=0?'+ ':'− '}${rp(Math.abs(netProfit))}</span></div>
     <div class="equity-formula-row negative"><span>Total CAPEX (aset tetap)</span><span class="val">− ${rp(totalCapex)}</span></div>
     <div class="equity-formula-row neutral" style="font-size:11px;color:var(--text3);padding:4px 0">
       <span>📊 Omzet YTD: ${rp(totalRevYTD)} | HPP: ${rp(totalCOGS)} | OPEX: ${rp(totalOpex)}</span>
     </div>
-    <div class="equity-formula-row ${equity>=0?'positive':'negative'}"><span><b>= Estimasi Equity Bersih</b></span><span class="val"><b>${rp(equity)}</b></span></div>`;
+    ${labaBukanHakEntitas > 0 ? `
+    <div class="equity-formula-row neutral" style="font-size:11px;color:var(--text3);padding:4px 0">
+      <span>↪ Laba outlet milik investor luar (tidak masuk equity entitas): ${rp(labaBukanHakEntitas)}</span>
+    </div>` : ''}
+    <div class="equity-formula-row ${equity>=0?'positive':'negative'}"><span><b>= Estimasi Equity Bersih</b></span><span class="val"><b>${rp(equity)}</b></span></div>
+    <div class="equity-formula-row neutral" style="font-size:10px;color:var(--text3);padding:6px 0 0">
+      <span>Global = entitas OKOMURAL (HQ Indrapura). Laba Cart #1 & #2 dihitung sebesar porsi entitas saja.</span>
+    </div>`;
 
   // ── Shareholders table ──
   const tbl = document.getElementById('sh-table');
