@@ -13236,9 +13236,23 @@ async function renderShareholderUI(){
   });
   const labaBukanHakEntitas = labaCabangPenuh - netProfit;
 
+  // Nilai stok = aset lancar. quantity / package_volume x package_price
+  let nilaiStok = 0;
+  try {
+    const { data: stokRows } = await supa.from('inventory_stocks')
+      .select('quantity, materials_master!inner(package_volume, package_price)');
+    nilaiStok = (stokRows||[]).reduce((s,r)=>{
+      const vol = parseFloat(r.materials_master?.package_volume||0);
+      const prc = parseFloat(r.materials_master?.package_price||0);
+      if(!vol || !prc) return s;
+      return s + (parseFloat(r.quantity||0) / vol) * prc;
+    },0);
+  } catch(e){ console.warn('[Shareholder] nilai stok error:', e.message); }
+
   const totalCap   = INJECTIONS_DB.reduce((s,c)=>s+parseFloat(c.amount||0),0);
   const totalCapex = CAPEX_DB.reduce((s,c)=>s+c.nilai,0);
-  const equity     = totalCap - totalCapex + netProfit;
+  // CAPEX tidak dikurangkan: aset tetap tetap milik entitas, bukan biaya.
+  const equity     = totalCap + nilaiStok + netProfit;
   const saldoAwalBelumDiset = totalCap === 0 && totalCapex === 0;
 
   const kpiEl = document.getElementById('sh-kpi-row');
@@ -13246,7 +13260,7 @@ async function renderShareholderUI(){
     kpiHTML(ICON_DOLLAR,'Total Equity',rp(equity),'Belum termasuk saldo awal',equity>0?1:-1,'') +
     kpiHTML(ICON_DOLLAR,'Capital Injected',rp(totalCap),'Suntikan modal baru',1,'') +
     kpiHTML(ICON_TREND,'Net Profit YTD',rp(netProfit),'Hak entitas saja',netProfit>0?1:-1,'') +
-    kpiHTML(ICON_OPEX,'Total CAPEX',rp(totalCapex),'Aset tetap',0,'');
+    kpiHTML(ICON_OPEX,'Nilai Stok',rp(nilaiStok),'Estimasi — belum opname',0,'');
 
   // ── Banner: saldo awal belum ditetapkan ──
   const warnEl = document.getElementById('sh-saldo-awal-warn');
@@ -13255,7 +13269,7 @@ async function renderShareholderUI(){
       <div style="border:1px solid rgba(239,158,39,.35);background:rgba(239,158,39,.10);border-radius:6px;padding:12px 14px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:4px">⚠ Saldo awal belum ditetapkan</div>
         <div style="font-size:11px;color:var(--text2);line-height:1.6">
-          Angka di bawah <b>hanya menghitung laba sejak transaksi tercatat di sistem</b>. Nilai aset OKOMURAL
+          <b>Nilai Stok memakai angka estimasi</b>, bukan hasil stok opname — diasumsikan persediaan setara sekitar satu kali pembelian per cabang, jadi angka sebenarnya bisa berbeda jauh. Nilai aset OKOMURAL
           (peralatan, gerobak, stok) dan akumulasi laba dari operasional sebelumnya belum dimasukkan,
           sehingga Total Equity yang sebenarnya <b>lebih besar dari angka ini</b>.<br>
           Lengkapi CAPEX Logs dan tetapkan saldo awal ekuitas agar laporan ini akurat.
@@ -13268,7 +13282,10 @@ async function renderShareholderUI(){
   if(formulaEl) formulaEl.innerHTML = `
     <div class="equity-formula-row positive"><span>Modal Disetor (Capital Injection)</span><span class="val">+ ${rp(totalCap)}</span></div>
     <div class="equity-formula-row positive"><span>Net Profit YTD — hak entitas</span><span class="val">${netProfit>=0?'+ ':'− '}${rp(Math.abs(netProfit))}</span></div>
-    <div class="equity-formula-row negative"><span>Total CAPEX (aset tetap)</span><span class="val">− ${rp(totalCapex)}</span></div>
+    <div class="equity-formula-row positive"><span>Nilai Stok Bahan Baku <span style="color:var(--amber);font-size:10px">(estimasi)</span></span><span class="val">+ ${rp(nilaiStok)}</span></div>
+    <div class="equity-formula-row neutral" style="font-size:11px;color:var(--text3);padding:4px 0">
+      <span>Aset tetap di CAPEX Logs: ${rp(totalCapex)}${totalCapex===0?' — belum diisi':''}</span>
+    </div>
     <div class="equity-formula-row neutral" style="font-size:11px;color:var(--text3);padding:4px 0">
       <span>📊 Omzet YTD: ${rp(totalRevYTD)} | HPP: ${rp(totalCOGS)} | OPEX: ${rp(totalOpex)}</span>
     </div>
