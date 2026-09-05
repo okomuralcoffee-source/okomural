@@ -16175,12 +16175,51 @@ async function callAdminEdge(payload){
   return json;
 }
 
+// Fallback: tampilkan daftar user read-only langsung dari tabel employees
+// dipakai saat login jatuh ke mode lokal (tidak ada session Supabase Auth)
+async function renderUsersReadOnly(tbody){
+  try {
+    const { data, error } = await supa.from('employees')
+      .select('id,name,email,branch_id,roles(name),branches(name)')
+      .order('name');
+    if(error) throw error;
+    if(!data || !data.length){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Belum ada user</td></tr>';
+      return;
+    }
+    const roleColor = {owner:'badge-green',manajer:'badge-amber',kasir:'badge-gray',barista:'badge-gray'};
+    tbody.innerHTML =
+      '<tr><td colspan="5" style="padding:10px 12px;color:var(--amber);font-size:11px;background:var(--amber-dim)">' +
+      'Mode baca-saja: sesi Supabase tidak aktif (login offline/fallback). Logout lalu login ulang saat koneksi stabil untuk bisa tambah/edit user.' +
+      '</td></tr>' +
+      data.map(e => {
+        const roleName   = e.roles?.name || '—';
+        const branchName = e.branches?.name || 'Semua Cabang';
+        const loginEmail = e.email || ((e.name||'user').toLowerCase().replace(/\s+/g,'') + '@okomural.internal');
+        return `<tr>
+          <td><div style="font-weight:600;color:var(--text)">${e.name||'—'}</div></td>
+          <td>
+            <div style="font-family:monospace;font-size:11px;color:var(--text);font-weight:500">${loginEmail.split('@')[0]}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:1px">${loginEmail}</div>
+          </td>
+          <td><span class="badge ${roleColor[roleName]||'badge-gray'}">${roleName.charAt(0).toUpperCase()+roleName.slice(1)}</span></td>
+          <td style="font-size:11px;color:var(--text3)">${branchName}</td>
+          <td><span class="badge badge-gray" style="font-size:10px">Baca-saja</span></td>
+        </tr>`;
+      }).join('');
+  } catch(err){
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--red)">Gagal memuat user: ' + err.message + '</td></tr>';
+  }
+}
 async function loadUsersFromSupabase(){
   if(currentUser?.role !== 'Owner') return;
   const tbody = document.getElementById('user-mgmt-tbody');
   if(!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">⏳ Memuat data user... (mungkin 2-3 detik)</td></tr>';
   try {
+    // Cek session dulu — kalau login lewat fallback lokal, tidak ada token Edge Function
+    const { data: { session: _sess } } = await supa.auth.getSession();
+    if(!_sess){ await renderUsersReadOnly(tbody); return; }
     // Edge Function mungkin cold start — beri waktu lebih
     const { data: employees } = await callAdminEdge({ action:'list' });
     if(!employees || employees.length === 0){
