@@ -4276,8 +4276,8 @@ async function hydrateUserFromSession(session) {
     <h3>Tambah Modal</h3>
     <p style="margin-bottom:14px">Catat dana masuk dari owner / investor</p>
     <div class="gfield" style="margin-bottom:8px">
-      <label>Dari (Nama Sumber) *</label>
-      <input id="ci-dari" type="text" class="struk-input" placeholder="Contoh: Mubarok (Owner)">
+      <label>Dari (Pemegang Saham) *</label>
+      <select id="ci-dari" class="struk-input"></select>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div class="gfield">
@@ -4584,11 +4584,9 @@ let CAPEX_DB = [
 ];
 let capexIdCounter = CAPEX_DB.length + 1;
 /* ── Capital Injection (Modal dari Owner/Investor) ── */
-let CAPITAL_DB = [
-  {id:'CI-001', dari:'Mubarok (Owner)', jumlah:50000000, tanggal:'2026-01-01', keterangan:'Modal awal pendirian HQ Indrapura', tipe:'modal'},
-  {id:'CI-002', dari:'Mubarok (Owner)', jumlah:20000000, tanggal:'2026-03-15', keterangan:'Modal ekspansi Cart #1 Sukamulya', tipe:'modal'},
-  {id:'CI-003', dari:'Mubarok (Owner)', jumlah:10000000, tanggal:'2026-06-01', keterangan:'Top-up kas operasional', tipe:'topup'},
-];
+// Sumber kebenaran = tabel Supabase capital_injections.
+// Diisi oleh loadCapitalFromSupabase(), bukan data hardcoded.
+let CAPITAL_DB = [];
 let capitalIdCounter = CAPITAL_DB.length + 1;
 
 // ── KONSINYASI DB ──────────────────────────────────────────────────────────
@@ -4685,8 +4683,10 @@ function loadAllLocalData(){
   // KARYAWAN_DB loaded from Supabase (not localStorage)
   CAPEX_DB      = lsLoad(LS_KEYS.capex,    CAPEX_DB);
   capexIdCounter= CAPEX_DB.length + 1;
-  CAPITAL_DB    = lsLoad(LS_KEYS.capital,  CAPITAL_DB);
-  capitalIdCounter = CAPITAL_DB.length + 1;
+  // CAPITAL_DB sengaja TIDAK di-load dari localStorage — sumbernya Supabase.
+  // Bersihkan sisa data lama agar tidak muncul lagi setelah dihapus.
+  try { localStorage.removeItem(LS_KEYS.capital); } catch(e){}
+  capitalIdCounter = 1;
   KONSINYASI_DB = lsLoad('okomural_konsinyasi_db', KONSINYASI_DB);
   konsinyasiIdCounter = KONSINYASI_DB.length + 1;
   CRM_MEMBERS   = lsLoad(LS_KEYS.crm,     CRM_MEMBERS);
@@ -12821,7 +12821,7 @@ function renderCapexLogs(){
     const yearsSince = (new Date().getFullYear() - new Date(c.tanggal).getFullYear()) || 0;
     const bookVal = Math.max(0, c.nilai - deprPerYear * yearsSince);
     return `<tr>
-      <td style="font-family:monospace;font-size:10px;color:var(--text3)">${c.id}</td>
+      <td style="font-family:monospace;font-size:10px;color:var(--text3)">${String(c.id).slice(0,8)}</td>
       <td style="font-weight:500">${c.nama}</td>
       <td><span class="capex-category-badge" style="background:${katColors[c.kategori]||'var(--text3)'}22;color:${katColors[c.kategori]||'var(--text3)'}">${c.kategori}</span></td>
       <td>${c.tanggal}</td>
@@ -13036,7 +13036,30 @@ function renderCapexAdvisory(){
    MODULE 5: CAPITAL INJECTION
    Input + track modal masuk dari owner/investor
 ══════════════════════════════════════════════════ */
-function renderCapitalInjection(){
+// Load capital_injections dari Supabase ke CAPITAL_DB
+async function loadCapitalFromSupabase(){
+  try {
+    const { data, error } = await supa.from('capital_injections')
+      .select('id, amount, injection_date, notes, shareholder_id, shareholders(name)')
+      .order('injection_date', { ascending: true });
+    if(error) throw error;
+    CAPITAL_DB = (data||[]).map(r => ({
+      id:         r.id,
+      dari:       r.shareholders?.name || '—',
+      jumlah:     parseFloat(r.amount||0),
+      tanggal:    r.injection_date || '',
+      // 'topup' ditandai lewat notes; default 'modal'
+      tipe:       /top-?up/i.test(r.notes||'') ? 'topup' : 'modal',
+      keterangan: r.notes || ''
+    }));
+  } catch(e){
+    CAPITAL_DB = [];
+    console.warn('[Capital] load error:', e.message);
+  }
+}
+
+async function renderCapitalInjection(){
+  await loadCapitalFromSupabase();
   const total = CAPITAL_DB.reduce((s,c)=>s+c.jumlah, 0);
   const modal = CAPITAL_DB.filter(c=>c.tipe==='modal').reduce((s,c)=>s+c.jumlah,0);
   const topup = CAPITAL_DB.filter(c=>c.tipe==='topup').reduce((s,c)=>s+c.jumlah,0);
@@ -13058,32 +13081,57 @@ function renderCapitalInjection(){
     <td><button class="btn btn-danger btn-sm" onclick="deleteCapital('${c.id}')">×</button></td>
   </tr>`).join('');
 }
-function openCapitalModal(){
+async function openCapitalModal(){
   document.getElementById('ci-modal-overlay').classList.add('open');
   const inp = document.getElementById('ci-tanggal');
   if(inp && !inp.value) inp.value = new Date().toISOString().slice(0,10);
+  // Isi dropdown pemegang saham dari Supabase
+  const sel = document.getElementById('ci-dari');
+  if(sel){
+    sel.innerHTML = '<option value="">Memuat...</option>';
+    try {
+      const { data } = await supa.from('shareholders')
+        .select('id,name').eq('is_active',true).order('name');
+      sel.innerHTML = (data||[]).length
+        ? '<option value="">— Pilih —</option>' +
+          data.map(s=>`<option value="${s.id}">${s.name}</option>`).join('')
+        : '<option value="">Belum ada pemegang saham</option>';
+    } catch(e){ sel.innerHTML = '<option value="">Gagal memuat</option>'; }
+  }
 }
 function closeCapitalModal(){
   document.getElementById('ci-modal-overlay').classList.remove('open');
 }
-function saveCapital(){
+async function saveCapital(){
   const get = id => document.getElementById(id)?.value.trim()||'';
-  const dari=get('ci-dari'), jumlah=parseFloat(get('ci-jumlah'))||0,
+  const shId=get('ci-dari'), jumlah=parseFloat(get('ci-jumlah'))||0,
         tanggal=get('ci-tanggal'), tipe=get('ci-tipe'), ket=get('ci-ket');
-  if(!dari){showToast('error','Nama sumber wajib diisi');return;}
+  if(!shId){showToast('error','Pilih pemegang saham');return;}
   if(!jumlah){showToast('error','Jumlah wajib diisi');return;}
-  CAPITAL_DB.push({id:'CI-'+String(capitalIdCounter++).padStart(3,'0'),dari,jumlah,tanggal,tipe,keterangan:ket});
-  saveCAPITAL();
-  closeCapitalModal();
-  renderCapitalInjection();
-  showToast('success','Modal dicatat',dari+' · '+rp(jumlah));
+  if(!tanggal){showToast('error','Tanggal wajib diisi');return;}
+  // Tipe disimpan sebagai prefiks di notes (tabel tidak punya kolom tipe)
+  const notes = (tipe==='topup' ? 'Top-up kas' : 'Modal pokok') + (ket ? ' — '+ket : '');
+  try {
+    const { error } = await supa.from('capital_injections').insert({
+      shareholder_id: shId, amount: jumlah, injection_date: tanggal, notes
+    });
+    if(error) throw error;
+    const nama = document.querySelector('#ci-dari option:checked')?.textContent || '';
+    closeCapitalModal();
+    await renderCapitalInjection();
+    showToast('success','Modal dicatat',nama+' · '+rp(jumlah));
+    logActivity('Capital Injection','Tambah: '+nama+' '+rp(jumlah));
+  } catch(e){ showToast('error','Gagal simpan: '+e.message); }
 }
 function deleteCapital(id){
-  openConfirm('Hapus record ini?','','Hapus',()=>{
-    const idx=CAPITAL_DB.findIndex(c=>c.id===id);
-    if(idx>-1) CAPITAL_DB.splice(idx,1);
-    renderCapitalInjection();
-    showToast('info','Record dihapus');
+  openConfirm('Hapus record ini?','Data akan dihapus permanen dari Supabase.','Hapus',async ()=>{
+    try {
+      const { error } = await supa.from('capital_injections').delete().eq('id', id);
+      if(error) throw error;
+      await renderCapitalInjection();
+      showToast('info','Record dihapus');
+      logActivity('Capital Injection','Hapus: '+String(id).slice(0,8));
+    } catch(e){ showToast('error','Gagal hapus: '+e.message); }
   });
 }
 /* ══════════════════════════════════════════════════
@@ -14716,12 +14764,19 @@ function applyWizardData(){
   const note  = document.getElementById('ws-modal-note')?.value.trim() || 'Modal awal setup';
   if(modal > 0){
     const now = new Date();
-    CAPITAL_DB.unshift({
-      id: 'CI-SETUP-001', dari, jumlah: modal, tanggal: now.toISOString().slice(0,10),
-      tipe: 'modal', ket: note
-    });
-    BIZ_DATA.capital_injected = (BIZ_DATA.capital_injected||0) + modal;
-    showToast('success', 'Modal dicatat', 'Rp '+modal.toLocaleString('id')+' dari '+dari);
+    // Simpan ke Supabase, bukan array lokal. Pakai pemegang saham pertama yang aktif.
+    supa.from('shareholders').select('id').eq('is_active',true).limit(1).maybeSingle()
+      .then(({data:sh}) => {
+        if(!sh){ showToast('warning','Modal belum tersimpan','Tambahkan pemegang saham dulu di Shareholder Equity'); return; }
+        return supa.from('capital_injections').insert({
+          shareholder_id: sh.id, amount: modal,
+          injection_date: now.toISOString().slice(0,10),
+          notes: 'Modal pokok — '+note
+        }).then(({error}) => {
+          if(error){ showToast('error','Gagal simpan modal: '+error.message); return; }
+          showToast('success','Modal dicatat','Rp '+modal.toLocaleString('id')+' dari '+dari);
+        });
+      });
   }
   // Step 3: INV already updated live via oninput
   // Step 4: CAPEX
